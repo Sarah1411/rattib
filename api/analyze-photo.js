@@ -1,6 +1,12 @@
-// Vercel serverless function.
-// Runs server-side only — this is where the Anthropic API key actually lives,
-// as an environment variable, never in any file the browser can see.
+// Vercel serverless function — Gemini (Google) version.
+// Same endpoint path as the Claude version (/api/analyze-photo), so no frontend
+// changes are needed. To use this instead of Anthropic's API, replace the
+// contents of api/analyze-photo.js with this file's contents, and set
+// GEMINI_API_KEY (instead of ANTHROPIC_API_KEY) in Vercel's environment variables.
+//
+// Get a free key at https://aistudio.google.com — no credit card required.
+// Check current free-tier rate limits there before relying on this for a live
+// demo, since Google's published limits change over time.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -24,42 +30,38 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
 }`;
 
   try {
-    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-              { type: "text", text: prompt }
-            ]
-          }
-        ]
-      })
-    });
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mediaType, data: image } }
+              ]
+            }
+          ]
+        })
+      }
+    );
 
-    if (!anthropicResponse.ok) {
-      const errText = await anthropicResponse.text();
-      console.error("Anthropic API error:", errText);
+    if (!geminiResponse.ok) {
+      const errText = await geminiResponse.text();
+      console.error("Gemini API error:", errText);
       return res.status(502).json({ error: "Vision API call failed" });
     }
 
-    const data = await anthropicResponse.json();
-    const textBlock = data.content?.find((b) => b.type === "text");
-    const cleaned = (textBlock?.text || "{}").replace(/```json|```/g, "").trim();
+    const data = await geminiResponse.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
 
     return res.status(200).json(parsed);
   } catch (err) {
-    console.error("analyze-photo error:", err);
+    console.error("analyze-photo (gemini) error:", err);
     return res.status(500).json({ error: "Analysis failed" });
   }
 }
