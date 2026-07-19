@@ -1,703 +1,81 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rattib — Sell it, donate it, or recycle it.</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+// Diagnostic version — this deliberately returns more detail than you'd normally
+// want in a production error response, so we can see exactly what's failing.
+// Once this is working, it's worth trimming the "detail"/"raw" fields back out.
 
-:root{
-  --limestone:#EAE5D8;
-  --limestone-dark:#DDD5C0;
-  --card:#F4F1E9;
-  --basalt:#24211C;
-  --basalt-soft:#5B5646;
-  --petrol:#1C5C53;
-  --petrol-dark:#123F39;
-  --petrol-light:#E1EDEA;
-  --clay:#A8502E;
-  --clay-dark:#7C3A20;
-  --clay-light:#F1E1D6;
-  --saffron:#D89A2E;
-  --saffron-dark:#A97620;
-  --saffron-light:#FAEFD8;
-  --alert:#B23B30;
-  --alert-light:#F6DEDB;
-  --border:rgba(36,33,28,0.14);
-  --border-soft:rgba(36,33,28,0.08);
-  --radius-sm:8px;
-  --radius-md:14px;
-  --radius-lg:22px;
-  --shadow-card:0 1px 2px rgba(36,33,28,0.06), 0 10px 24px rgba(36,33,28,0.06);
-  --font-display:'Cairo', sans-serif;
-  --font-body:'IBM Plex Sans', sans-serif;
-  --font-mono:'IBM Plex Mono', monospace;
-}
-*{box-sizing:border-box;}
-html{scroll-behavior:smooth;}
-body{margin:0;background:var(--limestone);color:var(--basalt);font-family:var(--font-body);line-height:1.55;-webkit-font-smoothing:antialiased;}
-a{color:inherit;text-decoration:none;}
-img{max-width:100%;display:block;}
-.wrap{max-width:1180px;margin:0 auto;padding:0 32px;}
-
-.site-header{position:sticky;top:0;z-index:40;background:rgba(234,229,216,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border-soft);}
-.site-header .wrap{display:flex;align-items:center;justify-content:space-between;height:76px;}
-.brand{display:flex;align-items:baseline;gap:10px;cursor:pointer;}
-.brand-mark{font-family:var(--font-display);font-weight:800;font-size:24px;color:var(--petrol-dark);letter-spacing:-0.01em;}
-.brand-ar{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--basalt-soft);}
-nav.main-nav{display:flex;gap:8px;align-items:center;}
-nav.main-nav a{font-size:14px;font-weight:500;color:var(--basalt-soft);padding:9px 14px;border-radius:999px;cursor:pointer;}
-nav.main-nav a:hover{background:var(--limestone-dark);color:var(--basalt);}
-nav.main-nav a.active{background:var(--petrol);color:var(--limestone);}
-.header-cta{font-size:14px;font-weight:600;color:var(--limestone);background:var(--clay);padding:10px 18px;border-radius:999px;cursor:pointer;}
-.header-cta:hover{background:var(--clay-dark);}
-
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font-body);font-weight:600;font-size:14.5px;padding:12px 22px;border-radius:999px;border:1px solid transparent;cursor:pointer;transition:transform .12s ease, background .12s ease;}
-.btn:active{transform:scale(0.97);}
-.btn-primary{background:var(--petrol);color:var(--limestone);}
-.btn-primary:hover{background:var(--petrol-dark);}
-.btn-clay{background:var(--clay);color:var(--limestone);}
-.btn-clay:hover{background:var(--clay-dark);}
-.btn-saffron{background:var(--saffron);color:var(--basalt);}
-.btn-saffron:hover{background:var(--saffron-dark);color:var(--limestone);}
-.btn-ghost{background:transparent;border-color:var(--border);color:var(--basalt);}
-.btn-ghost:hover{background:var(--limestone-dark);}
-.btn-block{width:100%;}
-
-.rtag{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11.5px;font-weight:500;padding:5px 10px 5px 8px;border-radius:6px;background:var(--petrol-light);color:var(--petrol-dark);border:1px solid rgba(28,92,83,0.18);}
-.rtag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--petrol);}
-.rtag.warn{background:var(--alert-light);color:var(--alert);border-color:rgba(178,59,48,0.25);}
-.rtag.warn::before{background:var(--alert);}
-.rtag.gold{background:var(--saffron-light);color:var(--saffron-dark);border-color:rgba(169,118,32,0.25);}
-.rtag.gold::before{background:var(--saffron-dark);}
-
-section{padding:88px 0;}
-.eyebrow{font-family:var(--font-mono);font-size:12.5px;letter-spacing:0.06em;color:var(--basalt-soft);text-transform:uppercase;margin:0 0 14px;}
-h1,h2,h3{font-family:var(--font-display);font-weight:800;color:var(--basalt);margin:0 0 18px;letter-spacing:-0.015em;}
-h1{font-size:52px;line-height:1.08;}
-h2{font-size:34px;line-height:1.15;}
-h3{font-size:19px;font-weight:700;}
-p.lede{font-size:18px;color:var(--basalt-soft);max-width:560px;}
-.card{background:var(--card);border:1px solid var(--border-soft);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);}
-
-.star-input{display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:4px;}
-.star-input input{position:absolute;opacity:0;width:0;height:0;}
-.star-input label{font-size:28px;color:var(--border);cursor:pointer;line-height:1;transition:color .1s ease;}
-.star-input input:checked ~ label{color:var(--saffron-dark);}
-.star-input label:hover,
-.star-input label:hover ~ label{color:var(--saffron-dark);}
-
-.trust-badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--petrol-dark);background:var(--petrol-light);padding:5px 12px;border-radius:999px;border:1px solid rgba(28,92,83,0.18);}
-.stars-static{color:var(--saffron-dark);font-size:15px;letter-spacing:1px;}
-.loc{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:var(--basalt-soft);}
-.loc svg{width:12px;height:12px;flex-shrink:0;}
-
-footer.site-footer{border-top:1px solid var(--border-soft);padding:40px 0;font-size:13.5px;color:var(--basalt-soft);}
-footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
-
-@media (max-width:860px){
-  h1{font-size:36px;}
-  h2{font-size:26px;}
-  nav.main-nav{display:none;}
-  .wrap{padding:0 20px;}
-}
-</style>
-</head>
-<body>
-
-<header class="site-header">
-  <div class="wrap">
-    <span class="brand" onclick="showView('home')">
-      <span class="brand-mark">Rattib</span>
-      <span class="brand-ar">رتّب</span>
-    </span>
-    <nav class="main-nav">
-      <a data-view="home" class="active" onclick="showView('home')">Home</a>
-      <a data-view="browse" onclick="showView('browse')">Browse</a>
-      <a data-view="donate" onclick="showView('donate')">Donate</a>
-    </nav>
-    <span class="header-cta" onclick="showView('browse')">List an item</span>
-  </div>
-</header>
-
-<main>
-
-<!-- ============ HOME ============ -->
-<div id="view-home" class="view">
-  <section style="padding-top:64px;padding-bottom:60px;">
-    <div class="wrap" style="display:grid;grid-template-columns:1.1fr 0.9fr;gap:56px;align-items:center;">
-      <div>
-        <p class="eyebrow">A calmer way to clear out a home in Saudi Arabia</p>
-        <h1>Sell it, donate it,<br>or recycle it.<br>Never just dump it.</h1>
-        <p class="lede">Rattib sorts what you no longer need into what it's actually worth — resale, donation, or recycling — with an AI photo tool that writes the listing for you, and a rating system that tells you who to trust.</p>
-        <div style="display:flex;gap:14px;margin-top:34px;">
-          <span class="btn btn-clay" onclick="showView('browse')">Browse items</span>
-          <span class="btn btn-ghost" onclick="showView('donate')">See how donation works</span>
-        </div>
-      </div>
-      <div class="card" style="padding:22px;">
-        <p class="eyebrow" style="margin-bottom:16px;">Try it — upload a photo</p>
-        <div style="display:flex;flex-direction:column;gap:14px;">
-          <label for="photo-input" id="photo-preview" style="height:180px;border-radius:var(--radius-md);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:13px;cursor:pointer;background-size:cover;background-position:center;text-align:center;padding:0 20px;">
-            Click to upload a photo of an item
-          </label>
-          <input type="file" id="photo-input" accept="image/*" style="display:none;">
-          <button id="analyze-btn" class="btn btn-clay btn-block">Analyze photo</button>
-          <div id="ai-tags" style="display:flex;flex-wrap:wrap;gap:8px;">
-            <span class="rtag">espresso machine</span>
-            <span class="rtag">stainless steel</span>
-            <span class="rtag gold">condition: good</span>
-            <span class="rtag warn">small dent, side panel</span>
-          </div>
-          <div style="border-top:1px solid var(--border-soft);padding-top:12px;">
-            <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--basalt-soft);" id="ai-mode-note">Demo mode — connect the /api/analyze-photo backend for live analysis</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section style="padding-top:0;padding-bottom:60px;">
-    <div class="wrap" style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;">
-      <div class="card" style="padding:26px;">
-        <span class="rtag" style="margin-bottom:14px;">buy &amp; sell</span>
-        <h3>Find exactly what you're after</h3>
-        <p style="color:var(--basalt-soft);font-size:14.5px;">Filter by category, price, condition, brand, and color — not a single wall of mixed listings to scroll through.</p>
-      </div>
-      <div class="card" style="padding:26px;">
-        <span class="rtag gold" style="margin-bottom:14px;">donate</span>
-        <h3>See where it actually went</h3>
-        <p style="color:var(--basalt-soft);font-size:14.5px;">Our charity partners confirm receipt in-app, so you get a real update instead of silence after drop-off.</p>
-      </div>
-      <div class="card" style="padding:26px;">
-        <span class="rtag" style="margin-bottom:14px;">recycle</span>
-        <h3>Nothing just goes in the bin</h3>
-        <p style="color:var(--basalt-soft);font-size:14.5px;">Items too worn to sell or donate get routed to the nearest recycling partner, in line with Saudi Vision 2030 waste-diversion goals.</p>
-      </div>
-    </div>
-  </section>
-
-  <section style="padding-top:0;">
-    <div class="wrap card" style="padding:40px 48px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:24px;">
-      <div>
-        <h2 style="margin-bottom:10px;">Trust is earned per transaction, not assumed</h2>
-        <p style="color:var(--basalt-soft);margin:0;max-width:520px;">Buyers and sellers rate each other after every deal. Ratings stay hidden until both sides submit, so no one waits to retaliate. Enough good ratings, and you're marked a Trusted Seller or Trusted Buyer.</p>
-      </div>
-      <span class="btn btn-primary" onclick="showView('listing')">See a rated listing</span>
-    </div>
-  </section>
-</div>
-
-<!-- ============ BROWSE ============ -->
-<div id="view-browse" class="view" style="display:none;">
-  <section style="padding-top:40px;">
-    <div class="wrap">
-      <p class="eyebrow">Browse</p>
-      <h2 style="margin-bottom:6px;">Every filter actually works</h2>
-      <p style="color:var(--basalt-soft);margin:0 0 20px;"><span id="result-count">14</span> items match your filters right now.</p>
-
-      <input type="text" id="f-search" placeholder="Search by name or brand — e.g. 'espresso', 'IKEA'" style="width:100%;padding:13px 16px;border-radius:999px;border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:14.5px;margin-bottom:16px;">
-
-      <div id="notify-banner" class="card" style="padding:16px 20px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--petrol);flex-shrink:0;"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span id="notify-text" style="font-size:14px;color:var(--basalt-soft);">No match with what you need? Save these filters and we'll notify you when a new listing fits.</span>
-        </div>
-        <span id="notify-btn" class="btn btn-ghost" onclick="setupNotify()" style="flex-shrink:0;">Notify me</span>
-      </div>
-
-      <div style="display:grid;grid-template-columns:240px 1fr;gap:36px;align-items:start;">
-        <aside class="card" style="padding:22px;position:sticky;top:96px;">
-          <h3 style="font-size:15px;margin-bottom:14px;">Category</h3>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-category" value="Electronics"> Electronics</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-category" value="Furniture"> Furniture</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-category" value="Clothing"> Clothing</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:20px;font-size:14px;"><input type="checkbox" class="f-category" value="Kids"> Kids</label>
-          <h3 style="font-size:15px;margin-bottom:14px;">Location</h3>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-location" value="Dammam"> Dammam</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-location" value="Al Khobar"> Al Khobar</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-location" value="Riyadh"> Riyadh</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:20px;font-size:14px;"><input type="checkbox" class="f-location" value="Jeddah"> Jeddah</label>
-          <h3 style="font-size:15px;margin-bottom:14px;">Condition</h3>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-condition" value="Like new"> Like new</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:14px;"><input type="checkbox" class="f-condition" value="Good"> Good</label>
-          <label style="display:flex;gap:8px;align-items:center;margin-bottom:20px;font-size:14px;"><input type="checkbox" class="f-condition" value="Fair"> Fair</label>
-          <h3 style="font-size:15px;margin-bottom:10px;">Max price</h3>
-          <input type="range" id="f-price" min="0" max="3000" step="50" value="3000" style="width:100%;">
-          <p style="font-family:var(--font-mono);font-size:13px;color:var(--basalt-soft);margin:8px 0 20px;"><span id="f-price-out">3,000</span> SAR</p>
-          <h3 style="font-size:15px;margin-bottom:10px;">Sort by</h3>
-          <select id="f-sort" style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:14px;">
-            <option value="newest">Newest</option>
-            <option value="price-asc">Price: low to high</option>
-            <option value="price-desc">Price: high to low</option>
-            <option value="condition">Condition</option>
-          </select>
-        </aside>
-        <div id="browse-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;"></div>
-      </div>
-    </div>
-  </section>
-</div>
-
-<!-- ============ LISTING ============ -->
-<div id="view-listing" class="view" style="display:none;">
-  <section style="padding-top:40px;">
-    <div class="wrap" style="display:grid;grid-template-columns:1.1fr 0.9fr;gap:44px;align-items:start;">
-      <div>
-        <div style="height:320px;border-radius:var(--radius-lg);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:13px;margin-bottom:20px;">photo of item</div>
-        <p class="eyebrow">Read from the seller's photo by Rattib AI</p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;">
-          <span class="rtag">espresso machine</span>
-          <span class="rtag">stainless steel body</span>
-          <span class="rtag">Breville</span>
-          <span class="rtag gold">condition: good</span>
-          <span class="rtag warn">flagged: small dent, side panel</span>
-        </div>
-        <h3 style="margin-bottom:10px;">Seller's description</h3>
-        <p style="color:var(--basalt-soft);max-width:520px;">Barely used, upgraded to a bigger machine. Works perfectly, descaled last month. One small cosmetic dent on the side, doesn't affect function — see the AI-flagged note above and photos before buying.</p>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:20px;">
-        <div class="card" style="padding:24px;">
-          <h2 style="font-size:24px;margin-bottom:6px;">Espresso machine</h2>
-          <div class="loc" style="margin-bottom:10px;">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
-            Dammam
-          </div>
-          <div style="font-family:var(--font-mono);font-size:30px;font-weight:500;margin-bottom:18px;">210 SAR</div>
-          <span class="btn btn-clay btn-block" style="margin-bottom:10px;">Make an offer</span>
-          <span class="btn btn-ghost btn-block">Message seller</span>
-        </div>
-        <div class="card" style="padding:24px;">
-          <p class="eyebrow" style="margin-bottom:12px;">Seller</p>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-            <div style="width:44px;height:44px;border-radius:50%;background:var(--petrol-light);color:var(--petrol-dark);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--font-display);">SA</div>
-            <div>
-              <div style="font-weight:600;font-size:15px;">Sarah A.</div>
-              <div class="stars-static">★★★★★</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <span class="trust-badge">Trusted seller</span>
-            <span style="font-size:12.5px;color:var(--basalt-soft);align-self:center;">32 completed sales</span>
-          </div>
-        </div>
-        <div class="card" style="padding:24px;">
-          <p class="eyebrow" style="margin-bottom:12px;">Rate this transaction</p>
-          <p style="font-size:13.5px;color:var(--basalt-soft);margin:0 0 16px;">Ratings stay hidden until both sides submit — neither of you sees the other's rating first.</p>
-          <form id="rating-form">
-            <div class="star-input" style="margin-bottom:14px;">
-              <input type="radio" id="s5" name="stars" value="5"><label for="s5">★</label>
-              <input type="radio" id="s4" name="stars" value="4"><label for="s4">★</label>
-              <input type="radio" id="s3" name="stars" value="3"><label for="s3">★</label>
-              <input type="radio" id="s2" name="stars" value="2"><label for="s2">★</label>
-              <input type="radio" id="s1" name="stars" value="1"><label for="s1">★</label>
-            </div>
-            <button type="submit" class="btn btn-primary btn-block">Submit rating</button>
-          </form>
-          <p id="rating-status" style="display:none;font-size:13.5px;color:var(--basalt-soft);margin:0;"></p>
-          <div id="rating-reveal" style="display:none;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
-            <div style="background:var(--limestone-dark);border-radius:var(--radius-sm);padding:12px;">
-              <p style="font-size:12px;color:var(--basalt-soft);margin:0 0 4px;">You rated</p>
-              <div class="stars-static" id="your-stars">★★★★★</div>
-            </div>
-            <div style="background:var(--limestone-dark);border-radius:var(--radius-sm);padding:12px;">
-              <p style="font-size:12px;color:var(--basalt-soft);margin:0 0 4px;">Sarah rated you</p>
-              <div class="stars-static">★★★★★</div>
-            </div>
-          </div>
-        </div>
-        <div class="card" style="padding:24px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-            <p class="eyebrow" style="margin-bottom:0;">Chat with seller</p>
-            <span onclick="reportChat()" style="font-size:12px;color:var(--basalt-soft);cursor:pointer;text-decoration:underline;">Report</span>
-          </div>
-          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 16px;">Messages stay inside Rattib — you never need to share your phone number to ask a question, and we screen messages for anything unsafe.</p>
-
-          <div id="chat-thread" style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;margin-bottom:14px;padding-right:4px;">
-            <div style="align-self:flex-start;background:var(--limestone-dark);border-radius:14px 14px 14px 4px;padding:9px 14px;max-width:80%;font-size:13.5px;">Hi! Is the espresso machine still available?</div>
-            <div style="align-self:flex-end;background:var(--petrol-light);color:var(--petrol-dark);border-radius:14px 14px 4px 14px;padding:9px 14px;max-width:80%;font-size:13.5px;">Yes, still have it — happy to meet in Dammam this week.</div>
-          </div>
-
-          <form id="chat-form" style="display:flex;gap:8px;">
-            <input type="text" id="chat-input" placeholder="Type a message…" autocomplete="off" style="flex:1;padding:10px 14px;border-radius:999px;border:1px solid var(--border);font-family:var(--font-body);font-size:14px;">
-            <button type="submit" class="btn btn-primary">Send</button>
-          </form>
-          <p id="chat-filter-note" style="display:none;font-size:12.5px;color:var(--alert);margin-top:8px;"></p>
-        </div>
-      </div>
-    </div>
-  </section>
-</div>
-<div id="view-donate" class="view" style="display:none;">
-  <section style="padding-top:40px;">
-    <div class="wrap" style="max-width:640px;">
-      <p class="eyebrow">Donation</p>
-      <h2 style="margin-bottom:8px;">Give it away, and actually see what happened</h2>
-      <p style="color:var(--basalt-soft);margin:0 0 32px;">No tax receipt to chase — just a real confirmation from the family or charity who received it.</p>
-      <div id="donation-before" class="card" style="padding:26px;">
-        <div style="display:flex;gap:16px;margin-bottom:20px;">
-          <div style="width:88px;height:88px;border-radius:var(--radius-sm);background:var(--limestone-dark);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:11px;">photo</div>
-          <div>
-            <h3 style="margin-bottom:4px;">Baby car seat</h3>
-            <span class="rtag gold">listed as donation</span>
-          </div>
-        </div>
-        <p class="eyebrow" style="margin-bottom:10px;">Charity partner</p>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px;background:var(--limestone-dark);border-radius:var(--radius-sm);padding:12px 14px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--saffron-light);color:var(--saffron-dark);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--font-display);font-size:13px;">DA</div>
-          <div>
-            <div style="font-weight:600;font-size:14px;">Dammam Family Aid</div>
-            <div style="font-size:12.5px;color:var(--basalt-soft);">Pickup scheduled — Thursday</div>
-          </div>
-        </div>
-        <p style="font-size:13.5px;color:var(--basalt-soft);margin:0 0 16px;">Waiting on the charity to confirm they've received this item.</p>
-        <button id="confirm-donation" class="btn btn-saffron btn-block">Simulate: charity confirms receipt</button>
-      </div>
-      <div id="impact-card" style="display:none;flex-direction:column;gap:20px;">
-        <div class="card" style="padding:0;overflow:hidden;">
-          <div style="background:var(--saffron-light);padding:28px;border-bottom:1px solid var(--border-soft);">
-            <span class="rtag gold" style="margin-bottom:14px;">confirmed</span>
-            <h2 style="font-size:26px;margin:10px 0 6px;">Your baby car seat helped a family in Dammam.</h2>
-            <p style="color:var(--basalt-soft);margin:0;">Received and confirmed by Dammam Family Aid, today.</p>
-          </div>
-          <div style="padding:20px 28px;display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-family:var(--font-mono);font-size:13px;color:var(--basalt-soft);">Rattib — رتّب</span>
-            <span style="font-size:13px;color:var(--basalt-soft);">Item #11 · donated</span>
-          </div>
-        </div>
-        <div style="display:flex;gap:12px;">
-          <span class="btn btn-primary" style="flex:1;">Share to WhatsApp</span>
-          <span class="btn btn-ghost" style="flex:1;">Share to Instagram</span>
-        </div>
-      </div>
-    </div>
-  </section>
-</div>
-
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <span>Rattib — رتّب</span>
-    <span>Built for the Saudi second-hand market · English interface, Arabic coming soon</span>
-  </div>
-</footer>
-
-<script>
-function showView(name){
-  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-  document.getElementById('view-' + name).style.display = 'block';
-  document.querySelectorAll('nav.main-nav a').forEach(a => a.classList.toggle('active', a.dataset.view === name));
-  window.scrollTo({top:0, behavior:'instant'});
-}
-
-const RATTIB_ITEMS = [
-  {id:1,  title:"Espresso machine",      category:"Electronics", price:210, condition:"Good",      brand:"Breville",  color:"Silver", location:"Dammam",   flag:"Minor dent, side panel"},
-  {id:2,  title:"Gaming laptop",         category:"Electronics", price:2400,condition:"Like new",   brand:"ASUS",      color:"Black",  location:"Riyadh",   flag:null},
-  {id:3,  title:"Air fryer",             category:"Electronics", price:95,  condition:"Fair",       brand:"Tefal",     color:"White",  location:"Jeddah",   flag:"Cord slightly frayed"},
-  {id:4,  title:"Standing desk",         category:"Furniture",   price:480, condition:"Good",       brand:"IKEA",      color:"Oak",    location:"Al Khobar",flag:null},
-  {id:5,  title:"3-seater sofa",         category:"Furniture",   price:900, condition:"Fair",       brand:"Homes r Us",color:"Grey",   location:"Dammam",   flag:"Fabric wear, left arm"},
-  {id:6,  title:"Bookshelf",             category:"Furniture",   price:150, condition:"Good",       brand:"IKEA",      color:"White",  location:"Riyadh",   flag:null},
-  {id:7,  title:"Winter coat",           category:"Clothing",    price:60,  condition:"Like new",   brand:"Zara",      color:"Navy",   location:"Jeddah",   flag:null},
-  {id:8,  title:"Running shoes, size 42",category:"Clothing",    price:75,  condition:"Good",       brand:"Nike",      color:"Black",  location:"Dammam",   flag:null},
-  {id:9,  title:"Abaya, size M",         category:"Clothing",    price:120, condition:"Like new",   brand:"Local tailor",color:"Black", location:"Riyadh",  flag:null},
-  {id:10, title:"Kids bicycle",          category:"Kids",        price:140, condition:"Good",       brand:"Decathlon", color:"Red",    location:"Al Khobar",flag:null},
-  {id:11, title:"Baby car seat",         category:"Kids",        price:0,   condition:"Fair",       brand:"Chicco",    color:"Grey",   location:"Dammam",   flag:"Check expiry date before use", donation:true},
-  {id:12, title:"Wooden train set",      category:"Kids",        price:45,  condition:"Good",       brand:"Generic",   color:"Multi",  location:"Jeddah",   flag:null},
-  {id:13, title:"Microwave oven",        category:"Electronics", price:0,   condition:"Fair",       brand:"LG",        color:"Black",  location:"Riyadh",   flag:"Door hinge loose", donation:true},
-  {id:14, title:"Dining table, 6-seat",  category:"Furniture",   price:650, condition:"Good",       brand:"Homes r Us",color:"Walnut", location:"Dammam",   flag:null},
-];
-
-function condClass(c){
-  if(c === "Fair") return "warn";
-  if(c === "Like new") return "gold";
-  return "";
-}
-
-function renderCards(items){
-  const grid = document.getElementById("browse-grid");
-  if(!grid) return;
-  if(items.length === 0){
-    grid.innerHTML = '<p style="color:var(--basalt-soft);grid-column:1/-1;padding:40px 0;">No items match those filters yet. Try widening your price range or clearing a filter.</p>';
-    return;
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
-  grid.innerHTML = items.map(it => `
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;cursor:pointer;" onclick="showView('listing')">
-      <div style="height:140px;border-radius:var(--radius-sm);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:12.5px;">photo</div>
-      <div>
-        <h3 style="margin:0 0 4px;font-size:16px;">${it.title}</h3>
-        <div class="loc" style="margin-bottom:8px;">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
-          ${it.location}
-        </div>
-        <div style="font-family:var(--font-mono);font-size:18px;font-weight:500;margin-bottom:8px;">${it.donation ? "Free — donation" : it.price.toLocaleString() + " SAR"}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          <span class="rtag ${condClass(it.condition)}">${it.condition}</span>
-          ${it.flag ? `<span class="rtag warn">${it.flag}</span>` : ""}
-        </div>
-      </div>
-    </div>
-  `).join("");
-}
 
-function applyFilters(){
-  const grid = document.getElementById("browse-grid");
-  if(!grid) return;
-  const checkedCats = Array.from(document.querySelectorAll(".f-category:checked")).map(el => el.value);
-  const checkedConds = Array.from(document.querySelectorAll(".f-condition:checked")).map(el => el.value);
-  const checkedLocs = Array.from(document.querySelectorAll(".f-location:checked")).map(el => el.value);
-  const maxPrice = Number(document.getElementById("f-price")?.value ?? 3000);
-  const sort = document.getElementById("f-sort")?.value ?? "newest";
-  const query = (document.getElementById("f-search")?.value ?? "").trim().toLowerCase();
-
-  let items = RATTIB_ITEMS.filter(it => {
-    const catOk = checkedCats.length === 0 || checkedCats.includes(it.category);
-    const condOk = checkedConds.length === 0 || checkedConds.includes(it.condition);
-    const locOk = checkedLocs.length === 0 || checkedLocs.includes(it.location);
-    const priceOk = it.price <= maxPrice;
-    const queryOk = query === "" || it.title.toLowerCase().includes(query) || it.brand.toLowerCase().includes(query);
-    return catOk && condOk && locOk && priceOk && queryOk;
-  });
-
-  if(sort === "price-asc") items.sort((a,b) => a.price - b.price);
-  if(sort === "price-desc") items.sort((a,b) => b.price - a.price);
-  if(sort === "condition") items.sort((a,b) => (a.condition === "Like new" ? -1 : 1) - (b.condition === "Like new" ? -1 : 1));
-
-  document.getElementById("result-count").textContent = items.length;
-  renderCards(items);
-}
-
-function setupBrowse(){
-  document.querySelectorAll(".f-category, .f-condition, .f-location, #f-sort").forEach(el => el.addEventListener("change", applyFilters));
-  document.getElementById("f-search").addEventListener("input", applyFilters);
-  const priceSlider = document.getElementById("f-price");
-  priceSlider.addEventListener("input", () => {
-    document.getElementById("f-price-out").textContent = Number(priceSlider.value).toLocaleString();
-    applyFilters();
-  });
-  applyFilters();
-}
-
-function setupNotify(){
-  const checkedCats = Array.from(document.querySelectorAll(".f-category:checked")).map(el => el.value);
-  const checkedLocs = Array.from(document.querySelectorAll(".f-location:checked")).map(el => el.value);
-  const maxPrice = Number(document.getElementById("f-price")?.value ?? 3000);
-
-  const catPart = checkedCats.length ? checkedCats.join("/") : "any category";
-  const locPart = checkedLocs.length ? checkedLocs.join("/") : "any city";
-  const pricePart = maxPrice.toLocaleString() + " SAR";
-
-  document.getElementById("notify-text").textContent =
-    `Saved. We'll notify you when a new ${catPart} listing under ${pricePart} appears in ${locPart}.`;
-  document.getElementById("notify-btn").textContent = "Saved ✓";
-  document.getElementById("notify-btn").style.pointerEvents = "none";
-  document.getElementById("notify-banner").style.background = "var(--petrol-light)";
-}
-
-function setupRating(){
-  const form = document.getElementById("rating-form");
-  const status = document.getElementById("rating-status");
-  const reveal = document.getElementById("rating-reveal");
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const stars = form.querySelector('input[name="stars"]:checked');
-    if(!stars) return;
-    const yourStars = "★".repeat(Number(stars.value)) + "☆".repeat(5 - Number(stars.value));
-
-    form.style.display = "none";
-    status.style.display = "block";
-    status.textContent = "Your rating is saved and hidden until the other side submits theirs too.";
-
-    setTimeout(() => {
-      status.textContent = "Both ratings are in.";
-      reveal.querySelector("#your-stars").textContent = yourStars;
-      reveal.style.display = "grid";
-    }, 1400);
-  });
-}
-
-function setupDonation(){
-  const btn = document.getElementById("confirm-donation");
-  const card = document.getElementById("impact-card");
-  const before = document.getElementById("donation-before");
-
-  btn.addEventListener("click", () => {
-    before.style.display = "none";
-    card.style.display = "flex";
-  });
-}
-
-/* ---------------- In-app chat with privacy + safety filtering ---------------- */
-/* Demo-only filter: a real build should run messages through a proper moderation
-   service rather than a hardcoded list, but this illustrates the two things that
-   matter most for a resale marketplace — blocking harassment, and blocking attempts
-   to move the conversation off-platform before a deal is safely arranged. */
-function screenMessage(text){
-  const lower = text.toLowerCase();
-  const phonePattern = /\d[\d\s-]{6,}\d/;
-  const offPlatformFlags = ["whatsapp", "call me", "my number", "text me at", "instagram", "snapchat"];
-  const harassmentFlags = ["idiot", "stupid", "shut up", "hate you"];
-
-  if(phonePattern.test(text)) return "This message looks like it contains a phone number. For your safety, keep contact details inside Rattib until you're ready to meet.";
-  if(offPlatformFlags.some(w => lower.includes(w))) return "This message looks like it's trying to move the conversation off Rattib. We keep chats in-app so there's a record if something goes wrong.";
-  if(harassmentFlags.some(w => lower.includes(w))) return "This message was held back for containing language that isn't allowed here.";
-  return null;
-}
-
-function addBubble(text, mine){
-  const thread = document.getElementById("chat-thread");
-  const bubble = document.createElement("div");
-  bubble.textContent = text;
-  bubble.style.maxWidth = "80%";
-  bubble.style.padding = "9px 14px";
-  bubble.style.fontSize = "13.5px";
-  if(mine){
-    bubble.style.alignSelf = "flex-end";
-    bubble.style.background = "var(--petrol-light)";
-    bubble.style.color = "var(--petrol-dark)";
-    bubble.style.borderRadius = "14px 14px 4px 14px";
-  } else {
-    bubble.style.alignSelf = "flex-start";
-    bubble.style.background = "var(--limestone-dark)";
-    bubble.style.borderRadius = "14px 14px 14px 4px";
+  const { image, mediaType } = req.body || {};
+  if (!image || !mediaType) {
+    return res.status(400).json({ error: "Missing image or mediaType" });
   }
-  thread.appendChild(bubble);
-  thread.scrollTop = thread.scrollHeight;
-}
 
-function setupChat(){
-  const form = document.getElementById("chat-form");
-  const input = document.getElementById("chat-input");
-  const note = document.getElementById("chat-filter-note");
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if(!text) return;
-
-    const blockReason = screenMessage(text);
-    if(blockReason){
-      note.style.display = "block";
-      note.textContent = blockReason;
-      input.value = "";
-      return;
-    }
-
-    note.style.display = "none";
-    addBubble(text, true);
-    input.value = "";
-
-    setTimeout(() => addBubble("Sounds good — let me know what time works best for you.", false), 1000);
-  });
-}
-
-function reportChat(){
-  const note = document.getElementById("chat-filter-note");
-  note.style.display = "block";
-  note.style.color = "var(--petrol-dark)";
-  note.textContent = "Thanks — this conversation has been flagged for our team to review.";
-}
-
-setupBrowse();
-setupRating();
-setupDonation();
-setupChat();
-setupPhotoUpload();
-
-/* ---------------- AI photo analysis: real call with graceful fallback ---------------- */
-const DEMO_FALLBACK_ANALYSIS = {
-  item_name: "Espresso machine",
-  material: "Stainless steel",
-  condition: "Good",
-  defect_flags: ["Small dent, side panel"],
-  hazard_flags: []
-};
-
-function fileToBase64(file){
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function renderAiTags(data, isLive, errorDetail){
-  const tagsBox = document.getElementById("ai-tags");
-  const note = document.getElementById("ai-mode-note");
-  let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span><span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
-  (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
-  (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
-  tagsBox.innerHTML = html;
-
-  if(isLive){
-    note.textContent = "Live AI analysis, read from your photo";
-    note.style.color = "var(--basalt-soft)";
-  } else if(errorDetail){
-    note.textContent = "Backend call failed — " + errorDetail;
-    note.style.color = "var(--alert)";
-  } else {
-    note.textContent = "Demo mode — connect the /api/analyze-photo backend for live analysis";
-    note.style.color = "var(--basalt-soft)";
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server" });
   }
-}
 
-function setupPhotoUpload(){
-  const fileInput = document.getElementById("photo-input");
-  const preview = document.getElementById("photo-preview");
-  const analyzeBtn = document.getElementById("analyze-btn");
-  if(!fileInput) return;
+  const prompt = `Look at this photo of a used household or personal item that someone wants to sell or donate on a second-hand marketplace.
 
-  let selectedFile = null;
+Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
+{
+  "item_name": "short name of the item",
+  "material": "primary material, e.g. stainless steel, cotton, wood",
+  "condition": "one of: Like new, Good, Fair",
+  "defect_flags": ["short phrase for each visible cosmetic or functional defect, empty array if none"],
+  "hazard_flags": ["short phrase for each visible safety concern such as frayed cords, cracks, corrosion, or anything that looks recalled or expired, empty array if none"]
+}`;
 
-  fileInput.addEventListener("change", () => {
-    selectedFile = fileInput.files[0];
-    if(!selectedFile) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      preview.style.backgroundImage = `url(${e.target.result})`;
-      preview.textContent = "";
-    };
-    reader.readAsDataURL(selectedFile);
-  });
-
-  analyzeBtn.addEventListener("click", async () => {
-    if(!selectedFile){
-      document.getElementById("ai-mode-note").textContent = "Choose a photo first.";
-      return;
-    }
-    analyzeBtn.textContent = "Analyzing…";
-    analyzeBtn.style.pointerEvents = "none";
-
-    try{
-      const base64 = await fileToBase64(selectedFile);
-      const response = await fetch("/api/analyze-photo", {
+  let geminiResponse;
+  try {
+    geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
         method: "POST",
-        headers: {"content-type": "application/json"},
-        body: JSON.stringify({ image: base64, mediaType: selectedFile.type })
-      });
-
-      if(!response.ok){
-        let bodyText = "";
-        try{ bodyText = await response.text(); } catch(e){ bodyText = "(no response body)"; }
-        console.error("Backend error:", response.status, bodyText);
-        renderAiTags(DEMO_FALLBACK_ANALYSIS, false, `status ${response.status} — ${bodyText.slice(0,200)}`);
-      } else {
-        const data = await response.json();
-        renderAiTags(data, true);
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mediaType, data: image } }
+              ]
+            }
+          ]
+        })
       }
-    } catch(err){
-      console.error("Network/parse error:", err);
-      renderAiTags(DEMO_FALLBACK_ANALYSIS, false, `network/parse error — ${err.message}`);
-    }
+    );
+  } catch (fetchErr) {
+    return res.status(502).json({ error: "Could not reach Gemini API", detail: fetchErr.message });
+  }
 
-    analyzeBtn.textContent = "Analyze photo";
-    analyzeBtn.style.pointerEvents = "auto";
-  });
+  const rawBody = await geminiResponse.text();
+
+  if (!geminiResponse.ok) {
+    return res.status(502).json({
+      error: "Gemini API returned an error",
+      status: geminiResponse.status,
+      detail: rawBody.slice(0, 500)
+    });
+  }
+
+  let data;
+  try {
+    data = JSON.parse(rawBody);
+  } catch (e) {
+    return res.status(500).json({ error: "Could not parse Gemini's response as JSON", detail: rawBody.slice(0, 500) });
+  }
+
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const cleaned = text.replace(/```json|```/g, "").trim();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    return res.status(500).json({ error: "Model reply wasn't valid JSON", raw: cleaned.slice(0, 500) });
+  }
+
+  return res.status(200).json(parsed);
 }
-</script>
-
-</body>
-</html>
