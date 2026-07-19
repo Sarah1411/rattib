@@ -624,16 +624,24 @@ function fileToBase64(file){
   });
 }
 
-function renderAiTags(data, isLive){
+function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
   let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span><span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
   (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
   (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
   tagsBox.innerHTML = html;
-  note.textContent = isLive
-    ? "Live AI analysis, read from your photo"
-    : "Demo mode — connect the /api/analyze-photo backend for live analysis";
+
+  if(isLive){
+    note.textContent = "Live AI analysis, read from your photo";
+    note.style.color = "var(--basalt-soft)";
+  } else if(errorDetail){
+    note.textContent = "Backend call failed — " + errorDetail;
+    note.style.color = "var(--alert)";
+  } else {
+    note.textContent = "Demo mode — connect the /api/analyze-photo backend for live analysis";
+    note.style.color = "var(--basalt-soft)";
+  }
 }
 
 function setupPhotoUpload(){
@@ -670,11 +678,19 @@ function setupPhotoUpload(){
         headers: {"content-type": "application/json"},
         body: JSON.stringify({ image: base64, mediaType: selectedFile.type })
       });
-      if(!response.ok) throw new Error("backend not reachable");
-      const data = await response.json();
-      renderAiTags(data, true);
+
+      if(!response.ok){
+        let bodyText = "";
+        try{ bodyText = await response.text(); } catch(e){ bodyText = "(no response body)"; }
+        console.error("Backend error:", response.status, bodyText);
+        renderAiTags(DEMO_FALLBACK_ANALYSIS, false, `status ${response.status} — ${bodyText.slice(0,200)}`);
+      } else {
+        const data = await response.json();
+        renderAiTags(data, true);
+      }
     } catch(err){
-      renderAiTags(DEMO_FALLBACK_ANALYSIS, false);
+      console.error("Network/parse error:", err);
+      renderAiTags(DEMO_FALLBACK_ANALYSIS, false, `network/parse error — ${err.message}`);
     }
 
     analyzeBtn.textContent = "Analyze photo";
