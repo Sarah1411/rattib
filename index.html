@@ -154,6 +154,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
             <span class="rtag gold">condition: good</span>
             <span class="rtag warn">small dent, side panel</span>
           </div>
+          <div id="ai-safety-check"></div>
           <div style="border-top:1px solid var(--border-soft);padding-top:12px;">
             <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--basalt-soft);" id="ai-mode-note">Upload a photo and click "Analyze photo" to see what the AI reads from it.</span>
           </div>
@@ -478,6 +479,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
   <div class="wrap">
     <span>Rattib — رتّب</span>
     <span>Built for the Saudi second-hand market · English interface, Arabic coming soon</span>
+    <span onclick="resetDemoData()" style="cursor:pointer;text-decoration:underline;">Reset demo data</span>
   </div>
 </footer>
 
@@ -538,6 +540,17 @@ function logOut(){
   localStorage.removeItem("rattib_user");
   renderAuthStatus();
   showView("home");
+}
+
+function resetDemoData(){
+  const confirmed = window.confirm("Reset all demo data on this device? This clears your account, listings, and chat messages, and reloads the page.");
+  if(!confirmed) return;
+
+  localStorage.removeItem("rattib_items");
+  localStorage.removeItem("rattib_user");
+  localStorage.removeItem("rattib_chat_thread");
+
+  location.reload();
 }
 
 function renderAuthStatus(){
@@ -878,6 +891,7 @@ const DEMO_FALLBACK_ANALYSIS = {
   condition: "Good",
   defect_flags: ["Small dent, side panel"],
   hazard_flags: [],
+  escalations: [],
   safety_check: "passed"
 };
 
@@ -892,6 +906,31 @@ function fileToBase64(file){
 
 let currentAnalysis = null;
 
+function buildSafetyCheckHTML(data){
+  const escalations = data.escalations || [];
+  if(escalations.length > 0){
+    const rows = escalations.map(e => `
+      <div style="margin-top:6px;font-size:12px;line-height:1.5;">
+        <span style="color:var(--basalt-soft);">Stage 1 (AI) flagged as a defect:</span>
+        <span style="text-decoration:line-through;color:var(--basalt-soft);">"${e.original}"</span>
+        <span style="margin:0 4px;">→</span>
+        <span style="color:var(--alert);font-weight:600;">escalated to hazard</span>
+        <span style="color:var(--basalt-soft);"> (matches "${e.matchedTerm}" pattern for ${e.category})</span>
+      </div>
+    `).join("");
+    return `
+      <div style="margin-top:4px;padding:10px 12px;background:var(--alert-light);border-radius:var(--radius-sm);">
+        <div style="font-size:12.5px;font-weight:600;color:var(--alert);">⚠ Stage 2 safety check escalated ${escalations.length} item${escalations.length > 1 ? "s" : ""}</div>
+        ${rows}
+      </div>
+    `;
+  }
+  if(data.safety_check === "passed"){
+    return `<div style="margin-top:4px;padding:9px 12px;background:var(--petrol-light);border-radius:var(--radius-sm);font-size:12px;color:var(--petrol-dark);">✓ Stage 2 safety check — no hazards found beyond what Stage 1 (AI) already flagged</div>`;
+  }
+  return "";
+}
+
 function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
@@ -900,12 +939,10 @@ function renderAiTags(data, isLive, errorDetail){
   html += `<span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
   (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
   (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
-  if(data.safety_check === "escalated"){
-    html += `<span class="rtag warn">⚠ flagged by safety verification pass</span>`;
-  } else if(data.safety_check === "passed"){
-    html += `<span class="rtag gold">✓ passed safety verification</span>`;
-  }
   tagsBox.innerHTML = html;
+
+  const safetyBox = document.getElementById("ai-safety-check");
+  if(safetyBox) safetyBox.innerHTML = buildSafetyCheckHTML(data);
 
   if(isLive){
     note.textContent = "Live AI analysis, read from your photo";
@@ -1006,6 +1043,7 @@ function renderMoveOutResults(){
           <span class="rtag gold">${(a.condition || "").toLowerCase()}</span>
           ${allFlags.map(f => `<span class="rtag warn">${f}</span>`).join("")}
         </div>
+        ${buildSafetyCheckHTML(a)}
         <select class="mo-cat" data-index="${i}" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;">
           ${["Electronics","Furniture","Clothing","Kids"].map(c => `<option value="${c}" ${a.category === c ? "selected" : ""}>${c}</option>`).join("")}
         </select>
