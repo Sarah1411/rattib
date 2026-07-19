@@ -117,7 +117,10 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
       <a data-view="browse" onclick="showView('browse')">Browse</a>
       <a data-view="donate" onclick="showView('donate')">Donate</a>
     </nav>
-    <span class="header-cta" onclick="showView('browse')">List an item</span>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span id="auth-status" onclick="showView('account')" style="font-size:14px;font-weight:600;color:var(--petrol-dark);cursor:pointer;">Sign up</span>
+      <span class="header-cta" onclick="showView('browse')">List an item</span>
+    </div>
   </div>
 </header>
 
@@ -342,10 +345,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
             Never send payment, banking details, or a verification code through chat — Rattib doesn't process payments here, and no legitimate buyer or seller will ask for these.
           </div>
 
-          <div id="chat-thread" style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;margin-bottom:14px;padding-right:4px;">
-            <div style="align-self:flex-start;background:var(--limestone-dark);border-radius:14px 14px 14px 4px;padding:9px 14px;max-width:80%;font-size:13.5px;">Hi! Is the espresso machine still available?</div>
-            <div style="align-self:flex-end;background:var(--petrol-light);color:var(--petrol-dark);border-radius:14px 14px 4px 14px;padding:9px 14px;max-width:80%;font-size:13.5px;">Yes, still have it — happy to meet in Dammam this week.</div>
-          </div>
+          <div id="chat-thread" style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;margin-bottom:14px;padding-right:4px;"></div>
 
           <form id="chat-form" style="display:flex;gap:8px;">
             <input type="text" id="chat-input" placeholder="Type a message…" autocomplete="off" style="flex:1;padding:10px 14px;border-radius:999px;border:1px solid var(--border);font-family:var(--font-body);font-size:14px;">
@@ -403,6 +403,37 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
   </section>
 </div>
 
+<!-- ============ ACCOUNT ============ -->
+<div id="view-account" class="view" style="display:none;">
+  <section style="padding-top:40px;">
+    <div class="wrap" style="max-width:480px;">
+
+      <div id="signup-form-wrap">
+        <p class="eyebrow">Account</p>
+        <h2 style="margin-bottom:8px;">Sign up to publish and chat</h2>
+        <p style="color:var(--basalt-soft);margin:0 0 24px;">A lightweight demo account — no password. It's enough to save your listings and messages on this device and show who posted what.</p>
+        <div class="card" style="padding:24px;display:flex;flex-direction:column;gap:12px;">
+          <input type="text" id="signup-name" placeholder="Your name" style="padding:11px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:var(--font-body);font-size:14px;">
+          <input type="email" id="signup-email" placeholder="Email" style="padding:11px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:var(--font-body);font-size:14px;">
+          <button id="signup-btn" class="btn btn-clay btn-block">Create account</button>
+          <p id="signup-error" style="display:none;font-size:12.5px;color:var(--alert);margin:0;">Please enter a name and email.</p>
+        </div>
+      </div>
+
+      <div id="account-profile-wrap" style="display:none;">
+        <p class="eyebrow">Account</p>
+        <h2 id="account-name-display" style="margin-bottom:6px;">—</h2>
+        <p id="account-email-display" style="color:var(--basalt-soft);margin:0 0 24px;">—</p>
+        <div class="card" style="padding:24px;">
+          <p style="font-size:13.5px;color:var(--basalt-soft);margin:0 0 16px;">Your listings and chat messages on this device are saved locally under this account. This is browser-local storage, not a shared account across devices.</p>
+          <span class="btn btn-ghost btn-block" onclick="logOut()">Log out</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
 </main>
 
 <footer class="site-footer">
@@ -420,7 +451,7 @@ function showView(name){
   window.scrollTo({top:0, behavior:'instant'});
 }
 
-const RATTIB_ITEMS = [
+const DEFAULT_RATTIB_ITEMS = [
   {id:1,  title:"Espresso machine",      category:"Electronics", price:210, condition:"Good",      brand:"Breville",  color:"Silver", location:"Dammam",   flag:"Minor dent, side panel"},
   {id:2,  title:"Gaming laptop",         category:"Electronics", price:2400,condition:"Like new",   brand:"ASUS",      color:"Black",  location:"Riyadh",   flag:null},
   {id:3,  title:"Air fryer",             category:"Electronics", price:95,  condition:"Fair",       brand:"Tefal",     color:"White",  location:"Jeddah",   flag:"Cord slightly frayed"},
@@ -436,6 +467,79 @@ const RATTIB_ITEMS = [
   {id:13, title:"Microwave oven",        category:"Electronics", price:0,   condition:"Fair",       brand:"LG",        color:"Black",  location:"Riyadh",   flag:"Door hinge loose", donation:true},
   {id:14, title:"Dining table, 6-seat",  category:"Furniture",   price:650, condition:"Good",       brand:"Homes r Us",color:"Walnut", location:"Dammam",   flag:null},
 ];
+
+/* ---------------- Persistence: accounts, listings, chat (browser-local only) ---------------- */
+/* This uses localStorage so listings and messages survive a page reload —
+   a real improvement over resetting every time. But it's still local to this
+   one browser/device, not a shared database other users' browsers can see.
+   A real deployment needs an actual backend database (and real auth) for that. */
+
+function loadItems(){
+  try{
+    const saved = localStorage.getItem("rattib_items");
+    if(saved) return JSON.parse(saved);
+  } catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT_RATTIB_ITEMS));
+}
+
+function saveItems(){
+  localStorage.setItem("rattib_items", JSON.stringify(RATTIB_ITEMS));
+}
+
+let RATTIB_ITEMS = loadItems();
+
+function getCurrentUser(){
+  try{
+    return JSON.parse(localStorage.getItem("rattib_user"));
+  } catch(e){
+    return null;
+  }
+}
+
+function logOut(){
+  localStorage.removeItem("rattib_user");
+  renderAuthStatus();
+  showView("home");
+}
+
+function renderAuthStatus(){
+  const user = getCurrentUser();
+  const authArea = document.getElementById("auth-status");
+  const signupWrap = document.getElementById("signup-form-wrap");
+  const profileWrap = document.getElementById("account-profile-wrap");
+
+  if(user){
+    authArea.textContent = "Hi, " + user.name.split(" ")[0];
+    if(signupWrap) signupWrap.style.display = "none";
+    if(profileWrap){
+      profileWrap.style.display = "block";
+      document.getElementById("account-name-display").textContent = user.name;
+      document.getElementById("account-email-display").textContent = user.email;
+    }
+  } else {
+    authArea.textContent = "Sign up";
+    if(signupWrap) signupWrap.style.display = "block";
+    if(profileWrap) profileWrap.style.display = "none";
+  }
+}
+
+function setupAccount(){
+  const btn = document.getElementById("signup-btn");
+  const error = document.getElementById("signup-error");
+  btn.addEventListener("click", () => {
+    const name = document.getElementById("signup-name").value.trim();
+    const email = document.getElementById("signup-email").value.trim();
+    if(!name || !email){
+      error.style.display = "block";
+      return;
+    }
+    error.style.display = "none";
+    localStorage.setItem("rattib_user", JSON.stringify({ name, email }));
+    renderAuthStatus();
+    showView("home");
+  });
+  renderAuthStatus();
+}
 
 function condClass(c){
   if(c === "Fair") return "warn";
@@ -464,6 +568,7 @@ function renderCards(items){
           <span class="rtag ${condClass(it.condition)}">${it.condition}</span>
           ${it.flag ? `<span class="rtag warn">${it.flag}</span>` : ""}
         </div>
+        ${it.postedBy ? `<div style="font-size:11.5px;color:var(--basalt-soft);margin-top:6px;">Posted by ${it.postedBy}</div>` : ""}
       </div>
     </div>
   `).join("");
@@ -606,7 +711,26 @@ function screenMessage(text){
   return { action: "allow" };
 }
 
-function addBubble(text, mine){
+const DEFAULT_CHAT_THREAD = [
+  { text: "Hi! Is the espresso machine still available?", mine: false },
+  { text: "Yes, still have it — happy to meet in Dammam this week.", mine: true }
+];
+
+function loadChatThread(){
+  try{
+    const saved = localStorage.getItem("rattib_chat_thread");
+    if(saved) return JSON.parse(saved);
+  } catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT_CHAT_THREAD));
+}
+
+function saveChatThread(messages){
+  localStorage.setItem("rattib_chat_thread", JSON.stringify(messages));
+}
+
+let chatMessages = loadChatThread();
+
+function addBubbleDOM(text, mine){
   const thread = document.getElementById("chat-thread");
   const bubble = document.createElement("div");
   bubble.textContent = text;
@@ -627,11 +751,26 @@ function addBubble(text, mine){
   thread.scrollTop = thread.scrollHeight;
 }
 
+function renderChatThread(){
+  const thread = document.getElementById("chat-thread");
+  if(!thread) return;
+  thread.innerHTML = "";
+  chatMessages.forEach(m => addBubbleDOM(m.text, m.mine));
+}
+
+function addMessage(text, mine){
+  chatMessages.push({ text, mine });
+  saveChatThread(chatMessages);
+  addBubbleDOM(text, mine);
+}
+
 function setupChat(){
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");
   const note = document.getElementById("chat-filter-note");
   let flaggedCount = 0;
+
+  renderChatThread();
 
   function showNote(text, color){
     note.style.display = "block";
@@ -644,6 +783,12 @@ function setupChat(){
     const text = input.value.trim();
     if(!text) return;
 
+    if(!getCurrentUser()){
+      showNote("Sign up first to send a message.", "var(--alert)");
+      showView("account");
+      return;
+    }
+
     const result = screenMessage(text);
 
     if(result.action === "block"){
@@ -655,7 +800,7 @@ function setupChat(){
       return;
     }
 
-    addBubble(text, true);
+    addMessage(text, true);
     input.value = "";
 
     if(result.action === "warn"){
@@ -667,7 +812,7 @@ function setupChat(){
       note.style.display = "none";
     }
 
-    setTimeout(() => addBubble("Sounds good — let me know what time works best for you.", false), 1000);
+    setTimeout(() => addMessage("Sounds good — let me know what time works best for you.", false), 1000);
   });
 }
 
@@ -682,6 +827,7 @@ setupBrowse();
 setupRating();
 setupDonation();
 setupChat();
+setupAccount();
 setupPhotoUpload();
 setupPublish();
 
@@ -742,6 +888,15 @@ function setupPublish(){
     if(!currentAnalysis){
       return;
     }
+
+    const user = getCurrentUser();
+    if(!user){
+      document.getElementById("ai-mode-note").textContent = "Sign up first to publish a listing.";
+      document.getElementById("ai-mode-note").style.color = "var(--alert)";
+      showView("account");
+      return;
+    }
+
     const isDonation = donationBox.checked;
     const price = isDonation ? 0 : Number(priceInput.value || 0);
     const allFlags = [...(currentAnalysis.defect_flags || []), ...(currentAnalysis.hazard_flags || [])];
@@ -757,10 +912,12 @@ function setupPublish(){
       color: "",
       location: document.getElementById("pub-location").value,
       flag: allFlags.length ? allFlags.join("; ") : null,
-      donation: isDonation
+      donation: isDonation,
+      postedBy: user.name
     };
 
     RATTIB_ITEMS.unshift(newItem);
+    saveItems();
 
     publishBtn.textContent = "Published ✓";
     publishBtn.style.pointerEvents = "none";
