@@ -153,6 +153,30 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
           <div style="border-top:1px solid var(--border-soft);padding-top:12px;">
             <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--basalt-soft);" id="ai-mode-note">Demo mode — connect the /api/analyze-photo backend for live analysis</span>
           </div>
+
+          <div id="publish-panel" style="display:none;flex-direction:column;gap:12px;border-top:1px solid var(--border-soft);padding-top:16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <select id="pub-category" style="padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:13.5px;">
+                <option value="Electronics">Electronics</option>
+                <option value="Furniture">Furniture</option>
+                <option value="Clothing">Clothing</option>
+                <option value="Kids">Kids</option>
+              </select>
+              <select id="pub-location" style="padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:13.5px;">
+                <option value="Dammam">Dammam</option>
+                <option value="Al Khobar">Al Khobar</option>
+                <option value="Riyadh">Riyadh</option>
+                <option value="Jeddah">Jeddah</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;">
+              <input type="number" id="pub-price" placeholder="Price (SAR)" min="0" style="flex:1;padding:9px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-mono);font-size:13.5px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--basalt-soft);white-space:nowrap;">
+                <input type="checkbox" id="pub-donation"> List as donation
+              </label>
+            </div>
+            <button id="publish-btn" class="btn btn-clay btn-block">Publish listing</button>
+          </div>
         </div>
       </div>
     </div>
@@ -605,6 +629,7 @@ setupRating();
 setupDonation();
 setupChat();
 setupPhotoUpload();
+setupPublish();
 
 /* ---------------- AI photo analysis: real call with graceful fallback ---------------- */
 const DEMO_FALLBACK_ANALYSIS = {
@@ -624,6 +649,8 @@ function fileToBase64(file){
   });
 }
 
+let currentAnalysis = null;
+
 function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
@@ -642,6 +669,59 @@ function renderAiTags(data, isLive, errorDetail){
     note.textContent = "Demo mode — connect the /api/analyze-photo backend for live analysis";
     note.style.color = "var(--basalt-soft)";
   }
+
+  currentAnalysis = data;
+  document.getElementById("publish-panel").style.display = "flex";
+}
+
+function setupPublish(){
+  const donationBox = document.getElementById("pub-donation");
+  const priceInput = document.getElementById("pub-price");
+  const publishBtn = document.getElementById("publish-btn");
+
+  donationBox.addEventListener("change", () => {
+    priceInput.disabled = donationBox.checked;
+    priceInput.style.opacity = donationBox.checked ? 0.5 : 1;
+  });
+
+  publishBtn.addEventListener("click", () => {
+    if(!currentAnalysis){
+      return;
+    }
+    const isDonation = donationBox.checked;
+    const price = isDonation ? 0 : Number(priceInput.value || 0);
+    const allFlags = [...(currentAnalysis.defect_flags || []), ...(currentAnalysis.hazard_flags || [])];
+
+    const nextId = Math.max(...RATTIB_ITEMS.map(i => i.id)) + 1;
+    const newItem = {
+      id: nextId,
+      title: currentAnalysis.item_name,
+      category: document.getElementById("pub-category").value,
+      price: price,
+      condition: currentAnalysis.condition,
+      brand: currentAnalysis.material,
+      color: "",
+      location: document.getElementById("pub-location").value,
+      flag: allFlags.length ? allFlags.join("; ") : null,
+      donation: isDonation
+    };
+
+    RATTIB_ITEMS.unshift(newItem);
+
+    publishBtn.textContent = "Published ✓";
+    publishBtn.style.pointerEvents = "none";
+
+    setTimeout(() => {
+      showView("browse");
+      document.querySelectorAll(".f-category, .f-condition, .f-location").forEach(el => el.checked = false);
+      document.getElementById("f-price").value = 3000;
+      document.getElementById("f-price-out").textContent = "3,000";
+      document.getElementById("f-search").value = "";
+      applyFilters();
+      publishBtn.textContent = "Publish listing";
+      publishBtn.style.pointerEvents = "auto";
+    }, 700);
+  });
 }
 
 function setupPhotoUpload(){
