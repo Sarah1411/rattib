@@ -50,7 +50,7 @@ nav.main-nav{display:flex;gap:8px;align-items:center;}
 nav.main-nav a{font-size:14px;font-weight:500;color:var(--basalt-soft);padding:9px 14px;border-radius:999px;cursor:pointer;}
 nav.main-nav a:hover{background:var(--limestone-dark);color:var(--basalt);}
 nav.main-nav a.active{background:var(--petrol);color:var(--limestone);}
-.header-cta{font-size:14px;font-weight:600;color:var(--limestone);background:var(--clay);padding:10px 18px;border-radius:999px;cursor:pointer;}
+.header-cta{font-size:14px;font-weight:700;color:var(--limestone);background:var(--clay);padding:10px 18px;border-radius:999px;cursor:pointer;}
 .header-cta:hover{background:var(--clay-dark);}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font-body);font-weight:600;font-size:14.5px;padding:12px 22px;border-radius:999px;border:1px solid transparent;cursor:pointer;transition:transform .12s ease, background .12s ease;}
@@ -120,7 +120,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
     </nav>
     <div style="display:flex;align-items:center;gap:14px;">
       <span id="auth-status" onclick="showView('account')" style="font-size:14px;font-weight:600;color:var(--petrol-dark);cursor:pointer;">Sign up</span>
-      <span class="header-cta" onclick="showView('home')">List an item</span>
+      <span class="header-cta" onclick="showView('home')">Place an Ad</span>
     </div>
   </div>
 </header>
@@ -141,7 +141,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
         </div>
       </div>
       <div class="card" style="padding:22px;">
-        <p class="eyebrow" style="margin-bottom:16px;">List an item</p>
+        <p style="margin:0 0 16px;font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--basalt);letter-spacing:-0.01em;">Place an Ad</p>
         <div style="display:flex;flex-direction:column;gap:14px;">
           <label for="photo-input" id="photo-preview" style="height:180px;border-radius:var(--radius-md);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:13px;cursor:pointer;background-size:cover;background-position:center;text-align:center;padding:0 20px;">
             Click to upload a photo of an item
@@ -149,15 +149,13 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
           <input type="file" id="photo-input" accept="image/*" style="display:none;">
           <button id="analyze-btn" class="btn btn-clay btn-block">Analyze photo</button>
           <div id="ai-tags" style="display:flex;flex-wrap:wrap;gap:8px;">
-            <span class="rtag">espresso machine</span>
-            <span class="rtag">stainless steel</span>
-            <span class="rtag gold">condition: good</span>
-            <span class="rtag warn">small dent, side panel</span>
+            <span style="font-size:13px;color:var(--basalt-soft);font-style:italic;">Item name, material, condition, and any defects will appear here after you analyze a photo.</span>
           </div>
           <div id="ai-safety-check"></div>
           <div style="border-top:1px solid var(--border-soft);padding-top:12px;">
             <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--basalt-soft);" id="ai-mode-note">Upload a photo and click "Analyze photo" to see what the AI reads from it.</span>
           </div>
+          <p style="font-size:12px;color:var(--basalt-soft);margin:0;">Clearing out more than one item? <span onclick="showView('moveout')" style="color:var(--petrol-dark);font-weight:600;cursor:pointer;text-decoration:underline;">Try the batch uploader</span> instead.</p>
 
           <div id="publish-panel" style="display:none;flex-direction:column;gap:12px;border-top:1px solid var(--border-soft);padding-top:16px;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -192,7 +190,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
       <div class="card" style="padding:26px;">
         <span class="rtag" style="margin-bottom:14px;">buy &amp; sell</span>
         <h3>Find exactly what you're after</h3>
-        <p style="color:var(--basalt-soft);font-size:14.5px;">Filter by category, price, condition, brand, and color — not a single wall of mixed listings to scroll through.</p>
+        <p style="color:var(--basalt-soft);font-size:14.5px;">Filter by category, condition, location, and price, or just search by keyword — not a single wall of mixed listings to scroll through.</p>
       </div>
       <div class="card" style="padding:26px;">
         <span class="rtag gold" style="margin-bottom:14px;">donate</span>
@@ -202,7 +200,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
       <div class="card" style="padding:26px;">
         <span class="rtag" style="margin-bottom:14px;">recycle</span>
         <h3>Nothing just goes in the bin</h3>
-        <p style="color:var(--basalt-soft);font-size:14.5px;">Items too worn to sell or donate get routed to the nearest recycling partner, in line with Saudi Vision 2030 waste-diversion goals.</p>
+        <p style="color:var(--basalt-soft);font-size:14.5px;">Items too worn to sell or donate shouldn't just go in the bin — Rattib is building toward routing them to recycling partners, in line with Saudi Vision 2030 waste-diversion goals.</p>
       </div>
     </div>
   </section>
@@ -213,7 +211,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
         <h2 style="margin-bottom:10px;">Trust is earned per transaction, not assumed</h2>
         <p style="color:var(--basalt-soft);margin:0;max-width:520px;">Buyers and sellers rate each other after every deal. Ratings stay hidden until both sides submit, so no one waits to retaliate. Enough good ratings, and you're marked a Trusted Seller or Trusted Buyer.</p>
       </div>
-      <span class="btn btn-primary" onclick="showView('listing')">See a rated listing</span>
+      <span class="btn btn-primary" onclick="showListing(1)">See a rated listing</span>
     </div>
   </section>
 </div>
@@ -276,39 +274,33 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
       <div>
         <div style="height:320px;border-radius:var(--radius-lg);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:13px;margin-bottom:20px;">photo of item</div>
         <p class="eyebrow">Read from the seller's photo by Rattib AI</p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;">
-          <span class="rtag">espresso machine</span>
-          <span class="rtag">stainless steel body</span>
-          <span class="rtag">Breville</span>
-          <span class="rtag gold">condition: good</span>
-          <span class="rtag warn">flagged: small dent, side panel</span>
-        </div>
-        <h3 style="margin-bottom:10px;">Seller's description</h3>
-        <p style="color:var(--basalt-soft);max-width:520px;">Barely used, upgraded to a bigger machine. Works perfectly, descaled last month. One small cosmetic dent on the side, doesn't affect function — see the AI-flagged note above and photos before buying.</p>
+        <div id="listing-tags" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;"></div>
+        <h3 style="margin-bottom:10px;">Item details</h3>
+        <p id="listing-description" style="color:var(--basalt-soft);max-width:520px;"></p>
       </div>
       <div style="display:flex;flex-direction:column;gap:20px;">
         <div class="card" style="padding:24px;">
-          <h2 style="font-size:24px;margin-bottom:6px;">Espresso machine</h2>
+          <h2 id="listing-title" style="font-size:24px;margin-bottom:6px;">Espresso machine</h2>
           <div class="loc" style="margin-bottom:10px;">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
-            Dammam
+            <span id="listing-location">Dammam</span>
           </div>
-          <div style="font-family:var(--font-mono);font-size:30px;font-weight:500;margin-bottom:18px;">210 SAR</div>
+          <div id="listing-price" style="font-family:var(--font-mono);font-size:30px;font-weight:500;margin-bottom:18px;">210 SAR</div>
           <span class="btn btn-clay btn-block" style="margin-bottom:10px;">Make an offer</span>
           <span class="btn btn-ghost btn-block">Message seller</span>
         </div>
         <div class="card" style="padding:24px;">
           <p class="eyebrow" style="margin-bottom:12px;">Seller</p>
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-            <div style="width:44px;height:44px;border-radius:50%;background:var(--petrol-light);color:var(--petrol-dark);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--font-display);">SA</div>
+            <div id="listing-seller-initials" style="width:44px;height:44px;border-radius:50%;background:var(--petrol-light);color:var(--petrol-dark);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:var(--font-display);">SA</div>
             <div>
-              <div style="font-weight:600;font-size:15px;">Sarah A.</div>
+              <div id="listing-seller-name" style="font-weight:600;font-size:15px;">Sarah A.</div>
               <div class="stars-static">★★★★★</div>
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <span class="trust-badge">Trusted seller</span>
-            <span style="font-size:12.5px;color:var(--basalt-soft);align-self:center;">32 completed sales</span>
+            <span id="listing-seller-meta" style="font-size:12.5px;color:var(--basalt-soft);align-self:center;">32 completed sales</span>
           </div>
         </div>
         <div class="card" style="padding:24px;">
@@ -436,7 +428,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
   </section>
 </div>
 
-<!-- ============ MOVING OUT ============ -->
+<!-- ============ BATCH UPLOAD ============ -->
 <div id="view-moveout" class="view" style="display:none;">
   <section style="padding-top:40px;">
     <div class="wrap" style="max-width:820px;">
@@ -489,6 +481,46 @@ function showView(name){
   document.getElementById('view-' + name).style.display = 'block';
   document.querySelectorAll('nav.main-nav a').forEach(a => a.classList.toggle('active', a.dataset.view === name));
   window.scrollTo({top:0, behavior:'instant'});
+}
+
+function showListing(id){
+  const item = RATTIB_ITEMS.find(it => it.id === id);
+  if(!item) return;
+
+  document.getElementById("listing-title").textContent = item.title;
+  document.getElementById("listing-location").textContent = item.location;
+  document.getElementById("listing-price").textContent = item.donation ? "Free — donation" : item.price.toLocaleString() + " SAR";
+
+  let tagsHTML = `<span class="rtag">${item.brand}</span><span class="rtag">${item.category}</span><span class="rtag gold">condition: ${item.condition.toLowerCase()}</span>`;
+  if(item.flag){
+    item.flag.split("; ").forEach(f => tagsHTML += `<span class="rtag warn">flagged: ${f}</span>`);
+  }
+  document.getElementById("listing-tags").innerHTML = tagsHTML;
+
+  document.getElementById("listing-description").textContent = item.flag
+    ? `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. See the AI-flagged note above and ask the seller directly before buying.`
+    : `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. No defects flagged by Rattib's AI.`;
+
+  if(item.postedBy){
+    document.getElementById("listing-seller-name").textContent = item.postedBy;
+    document.getElementById("listing-seller-initials").textContent = item.postedBy.trim().split(/\s+/).map(w => w[0]).join("").slice(0,2).toUpperCase();
+    document.getElementById("listing-seller-meta").textContent = "New listing on Rattib";
+  } else {
+    document.getElementById("listing-seller-name").textContent = "Sarah A.";
+    document.getElementById("listing-seller-initials").textContent = "SA";
+    document.getElementById("listing-seller-meta").textContent = "32 completed sales";
+  }
+
+  // reset the rating widget so a previous listing's state doesn't carry over
+  const ratingForm = document.getElementById("rating-form");
+  if(ratingForm){
+    ratingForm.style.display = "block";
+    ratingForm.reset();
+  }
+  document.getElementById("rating-status").style.display = "none";
+  document.getElementById("rating-reveal").style.display = "none";
+
+  showView("listing");
 }
 
 const DEFAULT_RATTIB_ITEMS = [
@@ -606,7 +638,7 @@ function renderCards(items){
     return;
   }
   grid.innerHTML = items.map(it => `
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;cursor:pointer;" onclick="showView('listing')">
+    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px;cursor:pointer;" onclick="showListing(${it.id})">
       <div style="height:140px;border-radius:var(--radius-sm);background:var(--limestone-dark);display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:12.5px;">photo</div>
       <div>
         <h3 style="margin:0 0 4px;font-size:16px;">${it.title}</h3>
@@ -885,11 +917,11 @@ setupPublish();
 
 /* ---------------- AI photo analysis: real call with graceful fallback ---------------- */
 const DEMO_FALLBACK_ANALYSIS = {
-  item_name: "Espresso machine",
-  material: "Stainless steel",
-  category: "Electronics",
+  item_name: "Item analysis unavailable",
+  material: "Unknown",
+  category: "Other",
   condition: "Good",
-  defect_flags: ["Small dent, side panel"],
+  defect_flags: [],
   hazard_flags: [],
   escalations: [],
   safety_check: "passed"
@@ -934,15 +966,20 @@ function buildSafetyCheckHTML(data){
 function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
-  let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span>`;
-  if(data.category) html += `<span class="rtag">${data.category}</span>`;
-  html += `<span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
-  (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
-  (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
-  tagsBox.innerHTML = html;
-
   const safetyBox = document.getElementById("ai-safety-check");
-  if(safetyBox) safetyBox.innerHTML = buildSafetyCheckHTML(data);
+
+  if(errorDetail){
+    tagsBox.innerHTML = `<span style="font-size:13px;color:var(--basalt-soft);font-style:italic;">Analysis couldn't be completed for this photo — you can still fill in the details manually below.</span>`;
+    if(safetyBox) safetyBox.innerHTML = "";
+  } else {
+    let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span>`;
+    if(data.category) html += `<span class="rtag">${data.category}</span>`;
+    html += `<span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
+    (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
+    (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
+    tagsBox.innerHTML = html;
+    if(safetyBox) safetyBox.innerHTML = buildSafetyCheckHTML(data);
+  }
 
   if(isLive){
     note.textContent = "Live AI analysis, read from your photo";
@@ -1033,17 +1070,21 @@ function renderMoveOutResults(){
   const grid = document.getElementById("mo-results-grid");
   grid.innerHTML = moResults.map((r, i) => {
     const a = r.analysis;
-    const allFlags = [...(a.defect_flags || []), ...(a.hazard_flags || [])];
     const bg = r.preview ? `url(${r.preview}) center/cover` : "var(--limestone-dark)";
+
+    let tagsHTML;
+    if(!r.isLive){
+      tagsHTML = `<span style="font-size:12px;color:var(--basalt-soft);font-style:italic;">Analysis couldn't be completed for this photo — fill in details manually below.</span>`;
+    } else {
+      const allFlags = [...(a.defect_flags || []), ...(a.hazard_flags || [])];
+      tagsHTML = `<span class="rtag">${a.item_name}</span><span class="rtag gold">${(a.condition || "").toLowerCase()}</span>${allFlags.map(f => `<span class="rtag warn">${f}</span>`).join("")}`;
+    }
+
     return `
       <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px;">
         <div style="height:100px;border-radius:var(--radius-sm);background:${bg};display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:11px;">${r.preview ? "" : "photo"}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          <span class="rtag">${a.item_name}</span>
-          <span class="rtag gold">${(a.condition || "").toLowerCase()}</span>
-          ${allFlags.map(f => `<span class="rtag warn">${f}</span>`).join("")}
-        </div>
-        ${buildSafetyCheckHTML(a)}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${tagsHTML}</div>
+        ${r.isLive ? buildSafetyCheckHTML(a) : ""}
         <select class="mo-cat" data-index="${i}" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;">
           ${["Electronics","Furniture","Clothing","Kids"].map(c => `<option value="${c}" ${a.category === c ? "selected" : ""}>${c}</option>`).join("")}
         </select>
