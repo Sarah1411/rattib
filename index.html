@@ -336,7 +336,11 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
             <p class="eyebrow" style="margin-bottom:0;">Chat with seller</p>
             <span onclick="reportChat()" style="font-size:12px;color:var(--basalt-soft);cursor:pointer;text-decoration:underline;">Report</span>
           </div>
-          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 16px;">Messages stay inside Rattib — you never need to share your phone number to ask a question, and we screen messages for anything unsafe.</p>
+          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 12px;">Chat here to ask questions or arrange a pickup — sharing a phone number if you'd like is fine, and we still screen messages for scams and harassment.</p>
+
+          <div style="background:var(--limestone-dark);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:var(--basalt-soft);">
+            Never send payment, banking details, or a verification code through chat — Rattib doesn't process payments here, and no legitimate buyer or seller will ask for these.
+          </div>
 
           <div id="chat-thread" style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;margin-bottom:14px;padding-right:4px;">
             <div style="align-self:flex-start;background:var(--limestone-dark);border-radius:14px 14px 14px 4px;padding:9px 14px;max-width:80%;font-size:13.5px;">Hi! Is the espresso machine still available?</div>
@@ -553,21 +557,53 @@ function setupDonation(){
   });
 }
 
-/* ---------------- In-app chat with privacy + safety filtering ---------------- */
-/* Demo-only filter: a real build should run messages through a proper moderation
-   service rather than a hardcoded list, but this illustrates the two things that
-   matter most for a resale marketplace — blocking harassment, and blocking attempts
-   to move the conversation off-platform before a deal is safely arranged. */
+/* ---------------- In-app chat with fraud/scam/harassment screening ---------------- */
+/* Demo-only pattern matching: a real build should run this through a proper
+   moderation and fraud-detection service (behavioral signals, account history,
+   reputation scoring, and a real hate-speech/profanity classifier) rather than a
+   fixed keyword list, which is easy to word around and can't safely enumerate
+   slurs or explicit content the way a trained classifier can. This illustrates
+   the category structure a real system needs:
+   - BLOCK: the message doesn't send at all (abuse/threats, unwanted personal or
+     sexual advances, redirecting entirely to a different app). Phone numbers are
+     allowed — sharing one to arrange a call or pickup is normal for this marketplace.
+   - WARN: the message sends, but shows a caution note (payment requests, classic
+     scam patterns, links, requests for sensitive codes) — these are ambiguous
+     enough that legitimate conversation shouldn't be silently blocked outright */
 function screenMessage(text){
   const lower = text.toLowerCase();
-  const phonePattern = /\d[\d\s-]{6,}\d/;
-  const offPlatformFlags = ["whatsapp", "call me", "my number", "text me at", "instagram", "snapchat"];
-  const harassmentFlags = ["idiot", "stupid", "shut up", "hate you"];
 
-  if(phonePattern.test(text)) return "This message looks like it contains a phone number. For your safety, keep contact details inside Rattib until you're ready to meet.";
-  if(offPlatformFlags.some(w => lower.includes(w))) return "This message looks like it's trying to move the conversation off Rattib. We keep chats in-app so there's a record if something goes wrong.";
-  if(harassmentFlags.some(w => lower.includes(w))) return "This message was held back for containing language that isn't allowed here.";
-  return null;
+  const urlPattern = /https?:\/\/|www\.\S+\.\S+/i;
+
+  const offPlatformFlags = ["whatsapp", "telegram", "instagram", "snapchat", "add me on", "my email is"];
+  const abuseFlags = ["idiot", "stupid", "shut up", "hate you", "kill you", "hurt you", "come to your house", "moron", "worthless", "i'll find you", "watch yourself", "you'll regret"];
+  const inappropriateFlags = ["send nudes", "send pics", "are you single", "what are you wearing", "you're so hot"];
+  const paymentRiskFlags = ["wire transfer", "western union", "moneygram", "bank transfer", "send the deposit", "pay upfront", "pay in advance", "iban", "gift card"];
+  const overpaymentFlags = ["overpaid", "refund the difference", "refund the extra", "sent too much", "send back the extra"];
+  const otpFlags = ["verification code", "one-time code", "sent you a code", "otp"];
+
+  if(offPlatformFlags.some(w => lower.includes(w))){
+    return { action: "block", reason: "This message looks like it's trying to move the conversation to a different app entirely. We keep chats in-app so there's a record if something goes wrong." };
+  }
+  if(abuseFlags.some(w => lower.includes(w))){
+    return { action: "block", reason: "This message was held back for containing abusive or threatening language." };
+  }
+  if(inappropriateFlags.some(w => lower.includes(w))){
+    return { action: "block", reason: "This message was held back for containing inappropriate or unwanted personal comments." };
+  }
+  if(paymentRiskFlags.some(w => lower.includes(w))){
+    return { action: "warn", reason: "This message mentions sending payment outside the app. Never wire money, use a gift card, or share banking details with someone you haven't met." };
+  }
+  if(overpaymentFlags.some(w => lower.includes(w))){
+    return { action: "warn", reason: "This matches a common scam pattern — an inflated payment followed by a refund request. Be cautious before refunding anything." };
+  }
+  if(otpFlags.some(w => lower.includes(w))){
+    return { action: "warn", reason: "This message mentions a verification code. Never share OTPs or codes with anyone, even another Rattib user." };
+  }
+  if(urlPattern.test(text)){
+    return { action: "warn", reason: "This message contains a link. Be cautious clicking links from people you haven't met in person." };
+  }
+  return { action: "allow" };
 }
 
 function addBubble(text, mine){
@@ -595,23 +631,41 @@ function setupChat(){
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");
   const note = document.getElementById("chat-filter-note");
+  let flaggedCount = 0;
+
+  function showNote(text, color){
+    note.style.display = "block";
+    note.style.color = color;
+    note.textContent = text;
+  }
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if(!text) return;
 
-    const blockReason = screenMessage(text);
-    if(blockReason){
-      note.style.display = "block";
-      note.textContent = blockReason;
+    const result = screenMessage(text);
+
+    if(result.action === "block"){
+      flaggedCount++;
+      let reason = result.reason;
+      if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
+      showNote(reason, "var(--alert)");
       input.value = "";
       return;
     }
 
-    note.style.display = "none";
     addBubble(text, true);
     input.value = "";
+
+    if(result.action === "warn"){
+      flaggedCount++;
+      let reason = result.reason;
+      if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
+      showNote(reason, "var(--saffron-dark)");
+    } else {
+      note.style.display = "none";
+    }
 
     setTimeout(() => addBubble("Sounds good — let me know what time works best for you.", false), 1000);
   });
