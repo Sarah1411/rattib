@@ -2,6 +2,45 @@
 // want in a production error response, so we can see exactly what's failing.
 // Once this is working, it's worth trimming the "detail"/"raw" fields back out.
 
+// ---------------- Stage 2: deterministic safety verification ----------------
+// This runs AFTER the vision model responds. It's a separate, rule-based pass
+// that cross-checks the model's own defect/hazard flags against a fixed table of
+// known hazard language per category, and escalates anything that looks like a
+// safety issue but got returned as a mere cosmetic "defect" by the model. This
+// exists because a single AI call can be inconsistent about where it draws the
+// line between "cosmetic" and "unsafe" — a second, deterministic pass gives a
+// consistent, auditable safety floor that doesn't depend on model mood.
+const HAZARD_LEXICON = {
+  Electronics: ["frayed cord", "exposed wire", "cracked casing", "burn mark", "swollen battery", "damaged plug", "sparking"],
+  Kids: ["expired", "recalled", "cracked", "broken buckle", "missing strap", "choking", "loose part"],
+  Furniture: ["structural crack", "unstable", "broken leg", "sharp edge", "wobbly frame"],
+  Clothing: ["mold", "chemical smell"],
+  Other: []
+};
+
+function verifySafety(parsed, category){
+  const lexicon = HAZARD_LEXICON[category] || [];
+  const remainingDefects = [];
+  const escalated = [];
+
+  (parsed.defect_flags || []).forEach((flag) => {
+    const flagLower = flag.toLowerCase();
+    const matchedTerm = lexicon.find((term) => flagLower.includes(term));
+    if (matchedTerm) {
+      escalated.push(`${flag} (escalated by safety check — matches "${matchedTerm}" pattern for ${category})`);
+    } else {
+      remainingDefects.push(flag);
+    }
+  });
+
+  return {
+    ...parsed,
+    defect_flags: remainingDefects,
+    hazard_flags: [...(parsed.hazard_flags || []), ...escalated],
+    safety_check: escalated.length > 0 ? "escalated" : "passed"
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -22,6 +61,7 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
 {
   "item_name": "short name of the item",
   "material": "primary material, e.g. stainless steel, cotton, wood",
+  "category": "one of: Electronics, Furniture, Clothing, Kids, Other",
   "condition": "one of: Like new, Good, Fair",
   "defect_flags": ["short phrase for each visible cosmetic or functional defect, empty array if none"],
   "hazard_flags": ["short phrase for each visible safety concern such as frayed cords, cracks, corrosion, or anything that looks recalled or expired, empty array if none"]
@@ -77,5 +117,7 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
     return res.status(500).json({ error: "Model reply wasn't valid JSON", raw: cleaned.slice(0, 500) });
   }
 
-  return res.status(200).json(parsed);
+  const verified = verifySafety(parsed, parsed.category || "Other");
+
+  return res.status(200).json(verified);
 }
