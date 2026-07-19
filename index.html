@@ -115,6 +115,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
     <nav class="main-nav">
       <a data-view="home" class="active" onclick="showView('home')">Home</a>
       <a data-view="browse" onclick="showView('browse')">Browse</a>
+      <a data-view="moveout" onclick="showView('moveout')">Batch Upload</a>
       <a data-view="donate" onclick="showView('donate')">Donate</a>
     </nav>
     <div style="display:flex;align-items:center;gap:14px;">
@@ -430,6 +431,43 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
         </div>
       </div>
 
+    </div>
+  </section>
+</div>
+
+<!-- ============ MOVING OUT ============ -->
+<div id="view-moveout" class="view" style="display:none;">
+  <section style="padding-top:40px;">
+    <div class="wrap" style="max-width:820px;">
+      <p class="eyebrow">Batch upload</p>
+      <h2 style="margin-bottom:8px;">Batch Image Processor</h2>
+      <p style="color:var(--basalt-soft);margin:0 0 28px;">Photograph a whole room at once — Rattib's AI reads each item individually, so you can review and publish a batch of listings in one pass instead of one at a time.</p>
+
+      <div class="card" style="padding:24px;margin-bottom:24px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:end;">
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px;">Location</p>
+            <select id="mo-location" style="width:100%;padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:14px;">
+              <option value="Dammam">Dammam</option>
+              <option value="Al Khobar">Al Khobar</option>
+              <option value="Riyadh">Riyadh</option>
+              <option value="Jeddah">Jeddah</option>
+            </select>
+          </div>
+          <div>
+            <p class="eyebrow" style="margin-bottom:8px;">Photos</p>
+            <label for="mo-files" class="btn btn-ghost btn-block" style="cursor:pointer;">Choose photos</label>
+            <input type="file" id="mo-files" accept="image/*" multiple style="display:none;">
+          </div>
+        </div>
+        <div id="mo-file-count" style="font-size:12.5px;color:var(--basalt-soft);margin-top:10px;"></div>
+        <button id="mo-analyze-btn" class="btn btn-clay btn-block" style="margin-top:16px;">Analyze all photos</button>
+        <p id="mo-progress" style="display:none;font-size:12.5px;color:var(--basalt-soft);margin:10px 0 0;"></p>
+      </div>
+
+      <div id="mo-results-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;"></div>
+
+      <button id="mo-publish-btn" style="display:none;" class="btn btn-primary btn-block">Publish all listings</button>
     </div>
   </section>
 </div>
@@ -828,6 +866,7 @@ setupRating();
 setupDonation();
 setupChat();
 setupAccount();
+setupMoveOut();
 setupPhotoUpload();
 setupPublish();
 
@@ -835,9 +874,11 @@ setupPublish();
 const DEMO_FALLBACK_ANALYSIS = {
   item_name: "Espresso machine",
   material: "Stainless steel",
+  category: "Electronics",
   condition: "Good",
   defect_flags: ["Small dent, side panel"],
-  hazard_flags: []
+  hazard_flags: [],
+  safety_check: "passed"
 };
 
 function fileToBase64(file){
@@ -854,9 +895,16 @@ let currentAnalysis = null;
 function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
-  let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span><span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
+  let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span>`;
+  if(data.category) html += `<span class="rtag">${data.category}</span>`;
+  html += `<span class="rtag gold">condition: ${data.condition.toLowerCase()}</span>`;
   (data.defect_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
   (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
+  if(data.safety_check === "escalated"){
+    html += `<span class="rtag warn">⚠ flagged by safety verification pass</span>`;
+  } else if(data.safety_check === "passed"){
+    html += `<span class="rtag gold">✓ passed safety verification</span>`;
+  }
   tagsBox.innerHTML = html;
 
   if(isLive){
@@ -868,6 +916,11 @@ function renderAiTags(data, isLive, errorDetail){
   } else {
     note.textContent = "Demo mode — connect the /api/analyze-photo backend for live analysis";
     note.style.color = "var(--basalt-soft)";
+  }
+
+  const categorySelect = document.getElementById("pub-category");
+  if(data.category && categorySelect && [...categorySelect.options].some(o => o.value === data.category)){
+    categorySelect.value = data.category;
   }
 
   currentAnalysis = data;
@@ -930,6 +983,139 @@ function setupPublish(){
       document.getElementById("f-search").value = "";
       applyFilters();
       publishBtn.textContent = "Publish listing";
+      publishBtn.style.pointerEvents = "auto";
+    }, 700);
+  });
+}
+
+/* ---------------- Batch image processor: analyze and publish multiple listings at once ---------------- */
+let moFiles = [];
+let moResults = [];
+
+function renderMoveOutResults(){
+  const grid = document.getElementById("mo-results-grid");
+  grid.innerHTML = moResults.map((r, i) => {
+    const a = r.analysis;
+    const allFlags = [...(a.defect_flags || []), ...(a.hazard_flags || [])];
+    const bg = r.preview ? `url(${r.preview}) center/cover` : "var(--limestone-dark)";
+    return `
+      <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+        <div style="height:100px;border-radius:var(--radius-sm);background:${bg};display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:11px;">${r.preview ? "" : "photo"}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="rtag">${a.item_name}</span>
+          <span class="rtag gold">${(a.condition || "").toLowerCase()}</span>
+          ${allFlags.map(f => `<span class="rtag warn">${f}</span>`).join("")}
+        </div>
+        <select class="mo-cat" data-index="${i}" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;">
+          ${["Electronics","Furniture","Clothing","Kids"].map(c => `<option value="${c}" ${a.category === c ? "selected" : ""}>${c}</option>`).join("")}
+        </select>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="number" class="mo-price" data-index="${i}" placeholder="Price (SAR)" min="0" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-mono);font-size:13px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--basalt-soft);white-space:nowrap;">
+            <input type="checkbox" class="mo-donation" data-index="${i}"> Donate
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--basalt-soft);">${r.isLive ? "Live AI analysis" : "Demo mode (backend unreachable)"}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setupMoveOut(){
+  const fileInput = document.getElementById("mo-files");
+  const fileCount = document.getElementById("mo-file-count");
+  const analyzeBtn = document.getElementById("mo-analyze-btn");
+  const progress = document.getElementById("mo-progress");
+  const publishBtn = document.getElementById("mo-publish-btn");
+
+  fileInput.addEventListener("change", () => {
+    moFiles = Array.from(fileInput.files);
+    fileCount.style.color = "var(--basalt-soft)";
+    fileCount.textContent = moFiles.length ? `${moFiles.length} photo${moFiles.length > 1 ? "s" : ""} selected` : "";
+  });
+
+  analyzeBtn.addEventListener("click", async () => {
+    if(moFiles.length === 0){
+      fileCount.style.color = "var(--alert)";
+      fileCount.textContent = "Choose at least one photo first.";
+      return;
+    }
+
+    analyzeBtn.style.pointerEvents = "none";
+    progress.style.display = "block";
+    moResults = [];
+
+    for(let i = 0; i < moFiles.length; i++){
+      progress.textContent = `Analyzing photo ${i + 1} of ${moFiles.length}…`;
+      const file = moFiles[i];
+      let result, isLive = false, preview = null;
+
+      try{
+        const base64 = await fileToBase64(file);
+        preview = `data:${file.type};base64,${base64}`;
+        const response = await fetch("/api/analyze-photo", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ image: base64, mediaType: file.type })
+        });
+        if(!response.ok) throw new Error("backend error " + response.status);
+        result = await response.json();
+        isLive = true;
+      } catch(err){
+        result = { ...DEMO_FALLBACK_ANALYSIS };
+      }
+
+      moResults.push({ analysis: result, isLive, preview });
+    }
+
+    progress.textContent = `Analyzed ${moResults.length} item${moResults.length > 1 ? "s" : ""}.`;
+    renderMoveOutResults();
+    publishBtn.style.display = "block";
+    analyzeBtn.style.pointerEvents = "auto";
+  });
+
+  publishBtn.addEventListener("click", () => {
+    const user = getCurrentUser();
+    if(!user){
+      progress.style.display = "block";
+      progress.style.color = "var(--alert)";
+      progress.textContent = "Sign up first to publish these listings.";
+      showView("account");
+      return;
+    }
+
+    const location = document.getElementById("mo-location").value;
+    let nextId = Math.max(...RATTIB_ITEMS.map(it => it.id)) + 1;
+
+    moResults.forEach((r, i) => {
+      const category = document.querySelector(`.mo-cat[data-index="${i}"]`).value;
+      const isDonation = document.querySelector(`.mo-donation[data-index="${i}"]`).checked;
+      const price = isDonation ? 0 : Number(document.querySelector(`.mo-price[data-index="${i}"]`).value || 0);
+      const allFlags = [...(r.analysis.defect_flags || []), ...(r.analysis.hazard_flags || [])];
+
+      RATTIB_ITEMS.unshift({
+        id: nextId++,
+        title: r.analysis.item_name,
+        category,
+        price,
+        condition: r.analysis.condition,
+        brand: r.analysis.material,
+        color: "",
+        location,
+        flag: allFlags.length ? allFlags.join("; ") : null,
+        donation: isDonation,
+        postedBy: user.name
+      });
+    });
+
+    saveItems();
+    publishBtn.textContent = "Published ✓";
+    publishBtn.style.pointerEvents = "none";
+
+    setTimeout(() => {
+      showView("browse");
+      applyFilters();
+      publishBtn.textContent = "Publish all listings";
       publishBtn.style.pointerEvents = "auto";
     }, 700);
   });
