@@ -1,15 +1,4 @@
-// Diagnostic version — this deliberately returns more detail than you'd normally
-// want in a production error response, so we can see exactly what's failing.
-// Once this is working, it's worth trimming the "detail"/"raw" fields back out.
 
-// ---------------- Stage 2: deterministic safety verification ----------------
-// This runs AFTER the vision model responds. It's a separate, rule-based pass
-// that cross-checks the model's own defect/hazard flags against a fixed table of
-// known hazard language per category, and escalates anything that looks like a
-// safety issue but got returned as a mere cosmetic "defect" by the model. This
-// exists because a single AI call can be inconsistent about where it draws the
-// line between "cosmetic" and "unsafe" — a second, deterministic pass gives a
-// consistent, auditable safety floor that doesn't depend on model mood.
 const HAZARD_LEXICON = {
   Electronics: ["frayed cord", "exposed wire", "cracked casing", "burn mark", "swollen battery", "damaged plug", "sparking"],
   Kids: ["expired", "recalled", "cracked", "broken buckle", "missing strap", "choking", "loose part"],
@@ -21,13 +10,13 @@ const HAZARD_LEXICON = {
 function verifySafety(parsed, category){
   const lexicon = HAZARD_LEXICON[category] || [];
   const remainingDefects = [];
-  const escalated = [];
+  const escalations = [];
 
   (parsed.defect_flags || []).forEach((flag) => {
     const flagLower = flag.toLowerCase();
     const matchedTerm = lexicon.find((term) => flagLower.includes(term));
     if (matchedTerm) {
-      escalated.push(`${flag} (escalated by safety check — matches "${matchedTerm}" pattern for ${category})`);
+      escalations.push({ original: flag, matchedTerm, category });
     } else {
       remainingDefects.push(flag);
     }
@@ -36,8 +25,9 @@ function verifySafety(parsed, category){
   return {
     ...parsed,
     defect_flags: remainingDefects,
-    hazard_flags: [...(parsed.hazard_flags || []), ...escalated],
-    safety_check: escalated.length > 0 ? "escalated" : "passed"
+    hazard_flags: [...(parsed.hazard_flags || []), ...escalations.map((e) => e.original)],
+    escalations,
+    safety_check: escalations.length > 0 ? "escalated" : "passed"
   };
 }
 
