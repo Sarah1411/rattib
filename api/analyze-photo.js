@@ -1,12 +1,4 @@
-// Vercel serverless function — Gemini (Google) version.
-// Same endpoint path as the Claude version (/api/analyze-photo), so no frontend
-// changes are needed. To use this instead of Anthropic's API, replace the
-// contents of api/analyze-photo.js with this file's contents, and set
-// GEMINI_API_KEY (instead of ANTHROPIC_API_KEY) in Vercel's environment variables.
-//
-// Get a free key at https://aistudio.google.com — no credit card required.
-// Check current free-tier rate limits there before relying on this for a live
-// demo, since Google's published limits change over time.
+// Vercel serverless function — Gemini (Google).
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
