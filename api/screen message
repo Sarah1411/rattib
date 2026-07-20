@@ -1,0 +1,58 @@
+// Second-pass message screening. The rule-based filter (screenMessage in the
+// frontend) is fast and catches obvious cases with zero latency — this endpoint
+// is the slower, smarter pass for what a fixed keyword list can't catch:
+// creatively-worded scam attempts, indirect harassment, coded requests to move
+// off-platform. This is a genuine model call, not a bigger prompt bolted onto
+// the photo-analysis endpoint — a separate, purpose-built classifier.
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { text } = req.body || {};
+  if (!text) {
+    return res.status(400).json({ error: "Missing text" });
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server" });
+  }
+
+  const prompt = `You are a safety classifier for messages between buyers and sellers on a second-hand marketplace in Saudi Arabia. A fast rule-based filter already checked this message and found nothing obviously wrong. Your job is to catch subtler cases it would miss: creatively-worded scam attempts, indirect harassment, coded requests for money, passwords, or ID numbers, or anything else unsafe in a marketplace context that doesn't match an exact keyword.
+
+Message: """${text}"""
+
+Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
+{
+  "action": "one of: allow, warn, block",
+  "reason": "one short sentence explaining the decision, empty string if action is allow"
+}
+
+Use "block" only for clear harassment, threats, or solicitation of sensitive personal/financial information. Use "warn" for messages that seem like they could be leading toward a scam or a policy violation but aren't definitively bad. Use "allow" for normal marketplace conversation.`;
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      }
+    );
+
+    const rawBody = await response.text();
+    if (!response.ok) {
+      return res.status(502).json({ error: "Gemini API error", detail: rawBody.slice(0, 300) });
+    }
+
+    const data = JSON.parse(rawBody);
+    const modelText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const cleaned = modelText.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    return res.status(200).json(parsed);
+  } catch (err) {
+    return res.status(500).json({ error: "Screening failed", detail: err.message });
+  }
+}
