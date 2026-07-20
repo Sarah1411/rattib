@@ -854,15 +854,39 @@ function markBubbleFlagged(bubble, reason){
   bubble.insertAdjacentElement("afterend", note);
 }
 
+function markBubbleWarned(bubble, reason){
+  if(!bubble) return;
+  const note = document.createElement("div");
+  note.textContent = "⚠ " + reason;
+  note.style.fontSize = "11px";
+  note.style.color = "var(--saffron-dark)";
+  note.style.fontWeight = "600";
+  note.style.alignSelf = bubble.style.alignSelf;
+  note.style.maxWidth = "80%";
+  bubble.insertAdjacentElement("afterend", note);
+}
+
+function getBubbleByIndex(index){
+  const thread = document.getElementById("chat-thread");
+  return thread ? thread.querySelector(`[data-msg-index="${index}"]`) : null;
+}
+
 function flagMessageRetroactively(index, reason){
   if(chatMessages[index]){
     chatMessages[index].flagged = true;
     chatMessages[index].flagReason = reason;
     saveChatThread(chatMessages);
   }
-  const thread = document.getElementById("chat-thread");
-  const bubble = thread.querySelector(`[data-msg-index="${index}"]`);
-  markBubbleFlagged(bubble, reason);
+  markBubbleFlagged(getBubbleByIndex(index), reason);
+}
+
+function warnMessage(index, reason){
+  if(chatMessages[index]){
+    chatMessages[index].warned = true;
+    chatMessages[index].warnReason = reason;
+    saveChatThread(chatMessages);
+  }
+  markBubbleWarned(getBubbleByIndex(index), reason);
 }
 
 function renderChatThread(){
@@ -872,6 +896,7 @@ function renderChatThread(){
   chatMessages.forEach((m, i) => {
     const bubble = addBubbleDOM(m.text, m.mine, i);
     if(m.flagged) markBubbleFlagged(bubble, m.flagReason);
+    else if(m.warned) markBubbleWarned(bubble, m.warnReason);
   });
 }
 
@@ -932,6 +957,7 @@ function setupChat(){
       let reason = ruleResult.reason;
       if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
       showNote(reason, "var(--saffron-dark)");
+      warnMessage(messageIndex, ruleResult.reason);
     } else {
       note.style.display = "none";
     }
@@ -973,6 +999,7 @@ function setupChat(){
         let reason = "AI screening: " + aiResult.reason;
         if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
         showNote(reason, "var(--saffron-dark)");
+        warnMessage(messageIndex, "AI screening: " + aiResult.reason);
       }
     } catch(err){
       showNote("AI safety check unreachable for your last message — it was sent without a full review.", "var(--basalt-soft)");
