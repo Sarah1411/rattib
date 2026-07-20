@@ -1,6 +1,9 @@
-// Diagnostic version — this deliberately returns more detail than you'd normally
-// want in a production error response, so we can see exactly what's failing.
-// Once this is working, it's worth trimming the "detail"/"raw" fields back out.
+// Production version of the photo-analysis pipeline.
+// Three chained stages: (1) Gemini vision read, (2) deterministic safety
+// verification, (3) Gemini reasoning call that turns the verified attributes
+// into a sell/donate/recycle recommendation, price, and drafted listing.
+// Client-facing errors are clean and generic; failure detail is logged
+// server-side only — never returned in the response body.
 
 // ---------------- Stage 1: vision read ----------------
 // One Gemini call that looks at the photo and returns raw structured attributes.
@@ -21,7 +24,7 @@ const HAZARD_LEXICON = {
   Other: []
 };
 
-function verifySafety(parsed, category){
+function verifySafety(parsed, category) {
   const lexicon = HAZARD_LEXICON[category] || [];
   const remainingDefects = [];
   const escalations = [];
@@ -46,34 +49,62 @@ function verifySafety(parsed, category){
 }
 
 // ---------------- Shared Gemini caller ----------------
-async function callGemini(parts){
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts }] })
+// Hard timeout so a slow/stuck call can't hang a request indefinitely, plus
+// one retry on transient failures (timeouts, 429s, brief 5xx blips). A demo
+// or a real buyer only gets one shot at a first impression — a flaky network
+// moment shouldn't be the difference between "working" and "broken."
+const GEMINI_TIMEOUT_MS = 15000;
+
+async function callGeminiOnce(parts) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts }] }),
+        signal: controller.signal
+      }
+    );
+    const rawBody = await response.text();
+    if (!response.ok) {
+      const err = new Error(`Gemini API returned ${response.status}`);
+      err.status = response.status;
+      err.detail = rawBody.slice(0, 500);
+      throw err;
     }
-  );
-  const rawBody = await response.text();
-  if (!response.ok) {
-    const err = new Error("Gemini API returned an error");
-    err.status = response.status;
-    err.detail = rawBody.slice(0, 500);
-    throw err;
+    const data = JSON.parse(rawBody);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return JSON.parse(text.replace(/```json|```/g, "").trim());
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = JSON.parse(rawBody);
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+}
+
+async function callGemini(parts) {
+  try {
+    return await callGeminiOnce(parts);
+  } catch (err) {
+    const transient = err.name === "AbortError" || err.status === 429 || (err.status && err.status >= 500);
+    if (!transient) throw err;
+    console.warn("Gemini call failed, retrying once:", err.status || err.name, err.detail || err.message);
+    return await callGeminiOnce(parts);
+  }
 }
 
 // ---------------- Stage 3: reasoning call, chained from Stage 1+2's output ----------------
 // A second, text-only model call — no image, just the verified attributes from
 // stages 1 and 2 passed in as input. This is a genuine second reasoning step,
 // not a bigger prompt on the first call: it explicitly receives the safety-
-// verification result and is instructed to let it change the recommendation
-// (a hazard found in Stage 2 should push toward "recycle," not "sell").
-async function recommendNextSteps(verified){
+// verification result AND the condition tier, and is instructed to let both
+// change the recommendation. A safety hazard pushes toward "recycle" — and so
+// does an item that's simply too worn for resale or donation, even with zero
+// safety concerns. That second path is what actually makes "recycle" a real,
+// reachable outcome instead of a hazard-only edge case.
+async function recommendNextSteps(verified) {
   const prompt = `You are helping decide what should happen to a used item on a resale/donation marketplace. You've already been given verified attributes below — the hazard flags have already been through a separate safety check, so treat them as confirmed, not speculative.
 
 Item: ${verified.item_name}
@@ -89,10 +120,14 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
   "recommendation_reason": "one short sentence, explicitly referencing the condition and any hazards",
   "suggested_price_sar": integer (0 if recommended_action is donate or recycle),
   "price_reasoning": "one short sentence explaining the estimate based on category and condition",
-  "drafted_description": "a 2-3 sentence seller-style listing description, ready to post as-is"
+  "drafted_description": "a 2-3 sentence seller-style listing description, ready to post as-is (empty string if recommended_action is recycle)"
 }
 
-Rules: if there are any safety-verified hazards, strongly prefer "recycle" over "sell" and say so directly in recommendation_reason. If condition is "Fair" with no hazards, "donate" is usually more appropriate than "sell" for low resale-value categories. Only recommend "sell" when condition is "Good" or "Like new" and there are no hazards.`;
+Rules, in priority order:
+1. If there are any safety-verified hazards, "recycle" — explain the hazard directly in recommendation_reason.
+2. If condition is "Poor" (too worn, damaged, or non-functional to sell or donate) with no hazards, "recycle" — explain in recommendation_reason why it's unsuitable for resale or donation, not just that it's damaged.
+3. If condition is "Fair" with no hazards, "donate" is usually more appropriate than "sell" for low resale-value categories.
+4. Only recommend "sell" when condition is "Good" or "Like new" and there are no hazards.`;
 
   return callGemini([{ text: prompt }]);
 }
@@ -108,20 +143,23 @@ export default async function handler(req, res) {
   }
 
   if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server" });
+    console.error("GEMINI_API_KEY is not set on the server");
+    return res.status(500).json({ error: "Photo analysis is temporarily unavailable. Please try again shortly." });
   }
 
-  const visionPrompt = `Look at this photo of a used household or personal item that someone wants to sell or donate on a second-hand marketplace.
+  const visionPrompt = `Look at this photo of a used household or personal item that someone wants to sell, donate, or recycle on a second-hand marketplace.
 
 Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
 {
   "item_name": "short name of the item",
   "material": "primary material, e.g. stainless steel, cotton, wood",
   "category": "one of: Electronics, Furniture, Clothing, Kids, Other",
-  "condition": "one of: Like new, Good, Fair",
+  "condition": "one of: Like new, Good, Fair, Poor",
   "defect_flags": ["short phrase for each visible cosmetic or functional defect, empty array if none"],
   "hazard_flags": ["short phrase for each visible safety concern such as frayed cords, cracks, corrosion, or anything that looks recalled or expired, empty array if none"]
-}`;
+}
+
+Use "Poor" only when the item is too worn, damaged, or non-functional to reasonably sell or donate as-is.`;
 
   // ---- Stage 1: vision read ----
   let parsed;
@@ -131,10 +169,8 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
       { inline_data: { mime_type: mediaType, data: image } }
     ]);
   } catch (err) {
-    if (err.status) {
-      return res.status(502).json({ error: "Gemini API returned an error (vision stage)", status: err.status, detail: err.detail });
-    }
-    return res.status(500).json({ error: "Vision stage failed", detail: err.message });
+    console.error("Vision stage failed:", err.status || "", err.detail || err.message);
+    return res.status(502).json({ error: "We couldn't read that photo. Please try a clearer photo or try again in a moment." });
   }
 
   // ---- Stage 2: deterministic safety verification (no model call) ----
@@ -147,7 +183,7 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
   } catch (err) {
     // If the reasoning stage fails, still return the verified Stage 1+2 result
     // rather than failing the whole request — partial results beat none.
-    console.error("Stage 3 (recommendation) failed:", err.message || err.detail);
+    console.error("Stage 3 (recommendation) failed:", err.status || "", err.detail || err.message);
     return res.status(200).json({ ...verified, recommendation_stage_failed: true });
   }
 }
