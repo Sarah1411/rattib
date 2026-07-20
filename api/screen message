@@ -3,7 +3,7 @@
 // is the slower, smarter pass for what a fixed keyword list can't catch:
 // creatively-worded scam attempts, indirect harassment, coded requests to move
 // off-platform. This is a genuine model call, not a bigger prompt bolted onto
-// the photo-analysis endpoint — a separate, purpose-built classifier.
+// the photo-analysis endpoint — a separate, purpose-built classifier
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
