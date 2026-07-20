@@ -1,58 +1,75 @@
-// Second-pass message screening. The rule-based filter (screenMessage in the
-// frontend) is fast and catches obvious cases with zero latency — this endpoint
-// is the slower, smarter pass for what a fixed keyword list can't catch:
-// creatively-worded scam attempts, indirect harassment, coded requests to move
-// off-platform. This is a genuine model call, not a bigger prompt bolted onto
-// the photo-analysis endpoint — a separate, purpose-built classifier
+// Stage 3: reasoning call, chained from Stage 1+2's output — but as its OWN
+// endpoint now, called by the frontend only after /api/analyze-photo already
+// returned and rendered. This is what makes the analysis feel fast: the user
+// sees item/material/condition/safety-check after one round trip, and this
+// slower reasoning step (recommendation, price, description) fills in a moment
+// later rather than making them wait for both before seeing anything.
+
+async function callGemini(parts){
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts }] })
+    }
+  );
+  const rawBody = await response.text();
+  if (!response.ok) {
+    const err = new Error("Gemini API returned an error");
+    err.status = response.status;
+    err.detail = rawBody.slice(0, 500);
+    throw err;
+  }
+  const data = JSON.parse(rawBody);
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  return JSON.parse(text.replace(/```json|```/g, "").trim());
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { text } = req.body || {};
-  if (!text) {
-    return res.status(400).json({ error: "Missing text" });
+  const { item_name, material, category, condition, defect_flags, hazard_flags } = req.body || {};
+  if (!item_name || !condition) {
+    return res.status(400).json({ error: "Missing required attributes from Stage 1+2" });
   }
 
   if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server" });
   }
 
-  const prompt = `You are a safety classifier for messages between buyers and sellers on a second-hand marketplace in Saudi Arabia. A fast rule-based filter already checked this message and found nothing obviously wrong. Your job is to catch subtler cases it would miss: creatively-worded scam attempts, indirect harassment, coded requests for money, passwords, or ID numbers, or anything else unsafe in a marketplace context that doesn't match an exact keyword.
+  const defects = defect_flags || [];
+  const hazards = hazard_flags || [];
 
-Message: """${text}"""
+  const prompt = `You are helping decide what should happen to a used item on a resale/donation marketplace. You've already been given verified attributes below — the hazard flags have already been through a separate safety check, so treat them as confirmed, not speculative.
+
+Item: ${item_name}
+Material: ${material}
+Category: ${category}
+Condition: ${condition}
+Defects: ${defects.length ? defects.join("; ") : "none"}
+Safety-verified hazards: ${hazards.length ? hazards.join("; ") : "none"}
 
 Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
 {
-  "action": "one of: allow, warn, block",
-  "reason": "one short sentence explaining the decision, empty string if action is allow"
+  "recommended_action": "one of: sell, donate, recycle",
+  "recommendation_reason": "one short sentence, explicitly referencing the condition and any hazards",
+  "suggested_price_sar": integer (0 if recommended_action is donate or recycle),
+  "price_reasoning": "one short sentence explaining the estimate based on category and condition",
+  "drafted_description": "a 2-3 sentence seller-style listing description, ready to post as-is"
 }
 
-Use "block" only for clear harassment, threats, or solicitation of sensitive personal/financial information. Use "warn" for messages that seem like they could be leading toward a scam or a policy violation but aren't definitively bad. Use "allow" for normal marketplace conversation.`;
+Rules: if there are any safety-verified hazards, strongly prefer "recycle" over "sell" and say so directly in recommendation_reason. If condition is "Fair" with no hazards, "donate" is usually more appropriate than "sell" for low resale-value categories. Only recommend "sell" when condition is "Good" or "Like new" and there are no hazards.`;
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      }
-    );
-
-    const rawBody = await response.text();
-    if (!response.ok) {
-      return res.status(502).json({ error: "Gemini API error", detail: rawBody.slice(0, 300) });
-    }
-
-    const data = JSON.parse(rawBody);
-    const modelText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const cleaned = modelText.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-
-    return res.status(200).json(parsed);
+    const recommendation = await callGemini([{ text: prompt }]);
+    return res.status(200).json(recommendation);
   } catch (err) {
-    return res.status(500).json({ error: "Screening failed", detail: err.message });
+    if (err.status) {
+      return res.status(502).json({ error: "Gemini API returned an error (recommendation stage)", status: err.status, detail: err.detail });
+    }
+    return res.status(500).json({ error: "Recommendation stage failed", detail: err.message });
   }
 }
