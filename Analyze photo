@@ -120,35 +120,40 @@ async function callGemini(parts) {
 // A second, text-only model call — no image, just the verified attributes from
 // stages 1 and 2 passed in as input. This is a genuine second reasoning step,
 // not a bigger prompt on the first call: it explicitly receives the safety-
-// verification result AND the condition tier, and is instructed to let both
-// change the recommendation. A safety hazard pushes toward "recycle" — and so
-// does an item that's simply too worn for resale or donation, even with zero
-// safety concerns. That second path is what actually makes "recycle" a real,
-// reachable outcome instead of a hazard-only edge case.
+// verification result and is instructed to weigh the actual defect list, not
+// just the condition label, when deciding donate vs. recycle. A "Fair" tag
+// with several severe or hygiene-related defects (heavy staining, soiling,
+// severe tearing) is not something a charity should reasonably be expected to
+// accept — that judgment belongs here, in reasoning, rather than baked into a
+// single condition word from Stage 1. Hazard escalation stays deterministic
+// (Stage 2); this donate-vs-recycle call is deliberately a soft judgment.
 async function recommendNextSteps(verified) {
   const prompt = `You are helping decide what should happen to a used item on a resale/donation marketplace. You've already been given verified attributes below — the hazard flags have already been through a separate safety check, so treat them as confirmed, not speculative.
 
 Item: ${verified.item_name}
 Material: ${verified.material}
 Category: ${verified.category}
-Condition: ${verified.condition}
+Condition label (from initial vision read — treat as a rough starting point, not the final word): ${verified.condition}
 Defects: ${verified.defect_flags.length ? verified.defect_flags.join("; ") : "none"}
 Safety-verified hazards: ${verified.hazard_flags.length ? verified.hazard_flags.join("; ") : "none"}
 
 Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
 {
   "recommended_action": "one of: sell, donate, recycle",
-  "recommendation_reason": "one short sentence, explicitly referencing the condition and any hazards",
+  "recommendation_reason": "one short sentence, referencing the specific defects or hazards that drove the decision, not just the condition label",
   "suggested_price_sar": integer (0 if recommended_action is donate or recycle),
   "price_reasoning": "one short sentence explaining the estimate based on category and condition",
   "drafted_description": "a 2-3 sentence seller-style listing description, ready to post as-is (empty string if recommended_action is recycle)"
 }
 
+Decide by actually weighing the defect list below, not just the condition label — the label is a rough starting point from an earlier pass, not a rule to follow blindly.
+
 Rules, in priority order:
-1. If there are any safety-verified hazards, "recycle" — explain the hazard directly in recommendation_reason.
-2. If condition is "Poor" (too worn, damaged, or non-functional to sell or donate) with no hazards, "recycle" — explain in recommendation_reason why it's unsuitable for resale or donation, not just that it's damaged.
-3. If condition is "Fair" with no hazards, "donate" is usually more appropriate than "sell" for low resale-value categories.
-4. Only recommend "sell" when condition is "Good" or "Like new" and there are no hazards.`;
+1. If there are any safety-verified hazards, "recycle" — explain the hazard directly.
+2. Regardless of the condition label, if the defects themselves make the item unsuitable to hand to a charity or buyer as-is — for example three or more defects, or any defect involving hygiene (heavy dirt, stains, odor, soiling) or structural failure (severe tears, breaks, cracks, missing critical parts) — recommend "recycle." Name the specific defects that drove this in recommendation_reason, not just "it's damaged."
+3. If the condition label is "Poor" and neither of the above already applied, "recycle" — explain why it's unsuitable for resale or donation.
+4. If none of the above apply and condition is "Fair," "donate" is usually more appropriate than "sell" for low resale-value categories.
+5. Only recommend "sell" when condition is "Good" or "Like new," there are no hazards, and no defects meet the recycle threshold in rule 2.`;
 
   return callGemini([{ text: prompt }]);
 }
