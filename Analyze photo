@@ -53,7 +53,7 @@ function verifySafety(parsed, category) {
 // one retry on transient failures (timeouts, 429s, brief 5xx blips). A demo
 // or a real buyer only gets one shot at a first impression — a flaky network
 // moment shouldn't be the difference between "working" and "broken."
-const GEMINI_TIMEOUT_MS = 15000;
+const GEMINI_TIMEOUT_MS = 30000;
 
 // Gemini usually returns a clean JSON object as instructed, but occasionally
 // wraps it in a stray sentence or fence despite the prompt saying not to.
