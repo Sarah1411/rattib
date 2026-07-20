@@ -66,8 +66,18 @@ function extractJson(text) {
     return JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("No JSON object found in model response");
-    return JSON.parse(match[0]);
+    if (!match) {
+      const err = new Error("No JSON object found in model response");
+      err.detail = cleaned.slice(0, 500); // what Gemini actually sent - useful if e.g. it was truncated
+      throw err;
+    }
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      const err = new Error("Matched text was not valid JSON");
+      err.detail = match[0].slice(0, 500);
+      throw err;
+    }
   }
 }
 
@@ -81,7 +91,21 @@ async function callGeminiOnce(parts) {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }] }),
+        body: JSON.stringify({
+          contents: [{ parts }],
+          // Flash models spend part of the output token budget on internal
+          // "thinking" before writing the visible answer. Without an explicit
+          // cap, a long structured response (an item with many defects needs
+          // a longer description + reasoning) can get silently truncated
+          // mid-JSON - a call that "succeeds" over HTTP but isn't valid JSON.
+          // thinkingBudget: 0 skips that internal reasoning entirely (neither
+          // stage needs deep chain-of-thought), and maxOutputTokens gives the
+          // actual answer generous headroom.
+          generationConfig: {
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingBudget: 0 }
+          }
+        }),
         signal: controller.signal
       }
     );
