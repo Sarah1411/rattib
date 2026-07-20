@@ -1001,7 +1001,20 @@ function buildSafetyCheckHTML(data){
 }
 
 function buildRecommendationHTML(data, scope){
-  if(!data.recommended_action) return "";
+  if(!data.recommended_action){
+    // Stage 3 (the recommendation call) failed on the backend, but Stage 1+2
+    // (attributes + safety check) succeeded, so we still got a 200 response -
+    // just without recommended_action. That response carries
+    // recommendation_stage_failed/recommendation_error_message specifically
+    // so this state can be shown instead of silently rendering nothing.
+    if(data.recommendation_stage_failed){
+      return `
+        <div style="margin-top:4px;padding:12px 14px;background:var(--limestone-dark);border-radius:var(--radius-sm);">
+          <div style="font-size:12.5px;color:var(--basalt-soft);">${data.recommendation_error_message || "We couldn't generate a recommendation for this photo. You can still fill in the details manually below."}</div>
+        </div>`;
+    }
+    return "";
+  }
   scope = scope === undefined ? "single" : scope;
   const styles = {
     sell:    { bg: "var(--petrol-light)",  fg: "var(--petrol-dark)",  label: "Sell" },
