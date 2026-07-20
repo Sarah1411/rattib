@@ -1,4 +1,18 @@
+// Diagnostic version — this deliberately returns more detail than you'd normally
+// want in a production error response, so we can see exactly what's failing.
+// Once this is working, it's worth trimming the "detail"/"raw" fields back out.
 
+// ---------------- Stage 1: vision read ----------------
+// One Gemini call that looks at the photo and returns raw structured attributes.
+
+// ---------------- Stage 2: deterministic safety verification ----------------
+// Runs AFTER Stage 1, with no model call at all — a fixed, auditable table of
+// known hazard language per category, cross-checked against Stage 1's own
+// defect flags. Escalates anything that looks like a safety issue but got
+// returned as a mere cosmetic "defect." This exists because a single AI call
+// can be inconsistent about where it draws the line between "cosmetic" and
+// "unsafe" — a deterministic second pass gives a consistent safety floor that
+// doesn't depend on model mood, and doesn't cost a second API call.
 const HAZARD_LEXICON = {
   Electronics: ["frayed cord", "exposed wire", "cracked casing", "burn mark", "swollen battery", "damaged plug", "sparking"],
   Kids: ["expired", "recalled", "cracked", "broken buckle", "missing strap", "choking", "loose part"],
@@ -31,6 +45,58 @@ function verifySafety(parsed, category){
   };
 }
 
+// ---------------- Shared Gemini caller ----------------
+async function callGemini(parts){
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts }] })
+    }
+  );
+  const rawBody = await response.text();
+  if (!response.ok) {
+    const err = new Error("Gemini API returned an error");
+    err.status = response.status;
+    err.detail = rawBody.slice(0, 500);
+    throw err;
+  }
+  const data = JSON.parse(rawBody);
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  return JSON.parse(text.replace(/```json|```/g, "").trim());
+}
+
+// ---------------- Stage 3: reasoning call, chained from Stage 1+2's output ----------------
+// A second, text-only model call — no image, just the verified attributes from
+// stages 1 and 2 passed in as input. This is a genuine second reasoning step,
+// not a bigger prompt on the first call: it explicitly receives the safety-
+// verification result and is instructed to let it change the recommendation
+// (a hazard found in Stage 2 should push toward "recycle," not "sell").
+async function recommendNextSteps(verified){
+  const prompt = `You are helping decide what should happen to a used item on a resale/donation marketplace. You've already been given verified attributes below — the hazard flags have already been through a separate safety check, so treat them as confirmed, not speculative.
+
+Item: ${verified.item_name}
+Material: ${verified.material}
+Category: ${verified.category}
+Condition: ${verified.condition}
+Defects: ${verified.defect_flags.length ? verified.defect_flags.join("; ") : "none"}
+Safety-verified hazards: ${verified.hazard_flags.length ? verified.hazard_flags.join("; ") : "none"}
+
+Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
+{
+  "recommended_action": "one of: sell, donate, recycle",
+  "recommendation_reason": "one short sentence, explicitly referencing the condition and any hazards",
+  "suggested_price_sar": integer (0 if recommended_action is donate or recycle),
+  "price_reasoning": "one short sentence explaining the estimate based on category and condition",
+  "drafted_description": "a 2-3 sentence seller-style listing description, ready to post as-is"
+}
+
+Rules: if there are any safety-verified hazards, strongly prefer "recycle" over "sell" and say so directly in recommendation_reason. If condition is "Fair" with no hazards, "donate" is usually more appropriate than "sell" for low resale-value categories. Only recommend "sell" when condition is "Good" or "Like new" and there are no hazards.`;
+
+  return callGemini([{ text: prompt }]);
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -45,7 +111,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "GEMINI_API_KEY is not set on the server" });
   }
 
-  const prompt = `Look at this photo of a used household or personal item that someone wants to sell or donate on a second-hand marketplace.
+  const visionPrompt = `Look at this photo of a used household or personal item that someone wants to sell or donate on a second-hand marketplace.
 
 Return ONLY a JSON object (no other text, no markdown fences) with exactly this shape:
 {
@@ -57,57 +123,31 @@ Return ONLY a JSON object (no other text, no markdown fences) with exactly this 
   "hazard_flags": ["short phrase for each visible safety concern such as frayed cords, cracks, corrosion, or anything that looks recalled or expired, empty array if none"]
 }`;
 
-  let geminiResponse;
-  try {
-    geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mediaType, data: image } }
-              ]
-            }
-          ]
-        })
-      }
-    );
-  } catch (fetchErr) {
-    return res.status(502).json({ error: "Could not reach Gemini API", detail: fetchErr.message });
-  }
-
-  const rawBody = await geminiResponse.text();
-
-  if (!geminiResponse.ok) {
-    return res.status(502).json({
-      error: "Gemini API returned an error",
-      status: geminiResponse.status,
-      detail: rawBody.slice(0, 500)
-    });
-  }
-
-  let data;
-  try {
-    data = JSON.parse(rawBody);
-  } catch (e) {
-    return res.status(500).json({ error: "Could not parse Gemini's response as JSON", detail: rawBody.slice(0, 500) });
-  }
-
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  const cleaned = text.replace(/```json|```/g, "").trim();
-
+  // ---- Stage 1: vision read ----
   let parsed;
   try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
-    return res.status(500).json({ error: "Model reply wasn't valid JSON", raw: cleaned.slice(0, 500) });
+    parsed = await callGemini([
+      { text: visionPrompt },
+      { inline_data: { mime_type: mediaType, data: image } }
+    ]);
+  } catch (err) {
+    if (err.status) {
+      return res.status(502).json({ error: "Gemini API returned an error (vision stage)", status: err.status, detail: err.detail });
+    }
+    return res.status(500).json({ error: "Vision stage failed", detail: err.message });
   }
 
+  // ---- Stage 2: deterministic safety verification (no model call) ----
   const verified = verifySafety(parsed, parsed.category || "Other");
 
-  return res.status(200).json(verified);
+  // ---- Stage 3: reasoning call chained from stages 1+2 ----
+  try {
+    const recommendation = await recommendNextSteps(verified);
+    return res.status(200).json({ ...verified, ...recommendation });
+  } catch (err) {
+    // If the reasoning stage fails, still return the verified Stage 1+2 result
+    // rather than failing the whole request — partial results beat none.
+    console.error("Stage 3 (recommendation) failed:", err.message || err.detail);
+    return res.status(200).json({ ...verified, recommendation_stage_failed: true });
+  }
 }
