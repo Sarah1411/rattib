@@ -157,6 +157,8 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
           </div>
           <p style="font-size:12px;color:var(--basalt-soft);margin:0;">Clearing out more than one item? <span onclick="showView('moveout')" style="color:var(--petrol-dark);font-weight:600;cursor:pointer;text-decoration:underline;">Try the batch uploader</span> instead.</p>
 
+          <div id="ai-recommendation"></div>
+
           <div id="publish-panel" style="display:none;flex-direction:column;gap:12px;border-top:1px solid var(--border-soft);padding-top:16px;">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
               <select id="pub-category" style="padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:13.5px;">
@@ -172,6 +174,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
                 <option value="Jeddah">Jeddah</option>
               </select>
             </div>
+            <textarea id="pub-description" placeholder="Listing description" rows="3" style="padding:9px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-body);font-size:13.5px;resize:vertical;"></textarea>
             <div style="display:flex;align-items:center;gap:16px;">
               <input type="number" id="pub-price" placeholder="Price (SAR)" min="0" style="flex:1;padding:9px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-mono);font-size:13.5px;">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--basalt-soft);white-space:nowrap;">
@@ -333,7 +336,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
             <p class="eyebrow" style="margin-bottom:0;">Chat with seller</p>
             <span onclick="reportChat()" style="font-size:12px;color:var(--basalt-soft);cursor:pointer;text-decoration:underline;">Report</span>
           </div>
-          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 12px;">Chat here to ask questions or arrange a pickup — sharing a phone number if you'd like is fine, and we still screen messages for scams and harassment.</p>
+          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 12px;">Chat here to ask questions or arrange a pickup — sharing a phone number if you'd like is fine. Messages are screened by a fast rule-based filter, then a real AI classifier catches subtler scams and harassment the rules would miss.</p>
 
           <div style="background:var(--limestone-dark);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:var(--basalt-soft);">
             Never send payment, banking details, or a verification code through chat — Rattib doesn't process payments here, and no legitimate buyer or seller will ask for these.
@@ -497,9 +500,11 @@ function showListing(id){
   }
   document.getElementById("listing-tags").innerHTML = tagsHTML;
 
-  document.getElementById("listing-description").textContent = item.flag
-    ? `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. See the AI-flagged note above and ask the seller directly before buying.`
-    : `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. No defects flagged by Rattib's AI.`;
+  document.getElementById("listing-description").textContent = item.description
+    ? item.description
+    : (item.flag
+        ? `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. See the AI-flagged note above and ask the seller directly before buying.`
+        : `${item.condition} condition ${item.title.toLowerCase()}, ${item.brand.toLowerCase()}. No defects flagged by Rattib's AI.`);
 
   if(item.postedBy){
     document.getElementById("listing-seller-name").textContent = item.postedBy;
@@ -861,7 +866,7 @@ function setupChat(){
     note.textContent = text;
   }
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if(!text) return;
@@ -872,11 +877,39 @@ function setupChat(){
       return;
     }
 
-    const result = screenMessage(text);
-
-    if(result.action === "block"){
+    // Pass 1: fast, rule-based, zero latency — catches obvious cases instantly.
+    const ruleResult = screenMessage(text);
+    if(ruleResult.action === "block"){
       flaggedCount++;
-      let reason = result.reason;
+      let reason = ruleResult.reason;
+      if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
+      showNote(reason, "var(--alert)");
+      input.value = "";
+      return;
+    }
+
+    // Pass 2: a real AI classification call, only for messages that already
+    // cleared Pass 1 — catches subtler cases (coded scams, indirect harassment)
+    // that a fixed keyword list can't. Degrades gracefully to Pass 1's result
+    // if the call fails, rather than blocking the user on a network hiccup.
+    showNote("Checking message…", "var(--basalt-soft)");
+    let aiResult = { action: "allow", reason: "" };
+    try {
+      const response = await fetch("/api/screen-message", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      if(response.ok){
+        aiResult = await response.json();
+      }
+    } catch(err){
+      // AI pass unreachable — fall back to the rule-based result silently
+    }
+
+    if(aiResult.action === "block"){
+      flaggedCount++;
+      let reason = "AI screening: " + aiResult.reason;
       if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
       showNote(reason, "var(--alert)");
       input.value = "";
@@ -886,9 +919,12 @@ function setupChat(){
     addMessage(text, true);
     input.value = "";
 
-    if(result.action === "warn"){
+    const activeWarn = aiResult.action === "warn" ? ("AI screening: " + aiResult.reason)
+                      : (ruleResult.action === "warn" ? ruleResult.reason : null);
+
+    if(activeWarn){
       flaggedCount++;
-      let reason = result.reason;
+      let reason = activeWarn;
       if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
       showNote(reason, "var(--saffron-dark)");
     } else {
@@ -963,14 +999,35 @@ function buildSafetyCheckHTML(data){
   return "";
 }
 
+function buildRecommendationHTML(data){
+  if(!data.recommended_action) return "";
+  const styles = {
+    sell:    { bg: "var(--petrol-light)",  fg: "var(--petrol-dark)",  label: "Sell" },
+    donate:  { bg: "var(--saffron-light)", fg: "var(--saffron-dark)", label: "Donate" },
+    recycle: { bg: "var(--alert-light)",   fg: "var(--alert)",        label: "Recycle" }
+  };
+  const s = styles[data.recommended_action] || styles.sell;
+  let html = `
+    <div style="margin-top:4px;padding:12px 14px;background:${s.bg};border-radius:var(--radius-sm);">
+      <div style="font-size:12.5px;font-weight:700;color:${s.fg};margin-bottom:4px;">Stage 3 recommendation: ${s.label}</div>
+      <div style="font-size:12.5px;color:var(--basalt-soft);">${data.recommendation_reason || ""}</div>`;
+  if(data.recommended_action === "sell" && data.suggested_price_sar !== undefined){
+    html += `<div style="font-size:12.5px;color:var(--basalt-soft);margin-top:6px;font-family:var(--font-mono);">Suggested price: ${data.suggested_price_sar} SAR — ${data.price_reasoning || ""}</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
 function renderAiTags(data, isLive, errorDetail){
   const tagsBox = document.getElementById("ai-tags");
   const note = document.getElementById("ai-mode-note");
   const safetyBox = document.getElementById("ai-safety-check");
+  const recBox = document.getElementById("ai-recommendation");
 
   if(errorDetail){
     tagsBox.innerHTML = `<span style="font-size:13px;color:var(--basalt-soft);font-style:italic;">Analysis couldn't be completed for this photo — you can still fill in the details manually below.</span>`;
     if(safetyBox) safetyBox.innerHTML = "";
+    if(recBox) recBox.innerHTML = "";
   } else {
     let html = `<span class="rtag">${data.item_name}</span><span class="rtag">${data.material}</span>`;
     if(data.category) html += `<span class="rtag">${data.category}</span>`;
@@ -979,6 +1036,7 @@ function renderAiTags(data, isLive, errorDetail){
     (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
     tagsBox.innerHTML = html;
     if(safetyBox) safetyBox.innerHTML = buildSafetyCheckHTML(data);
+    if(recBox) recBox.innerHTML = buildRecommendationHTML(data);
   }
 
   if(isLive){
@@ -995,6 +1053,23 @@ function renderAiTags(data, isLive, errorDetail){
   const categorySelect = document.getElementById("pub-category");
   if(data.category && categorySelect && [...categorySelect.options].some(o => o.value === data.category)){
     categorySelect.value = data.category;
+  }
+
+  if(!errorDetail){
+    const donationBox = document.getElementById("pub-donation");
+    const priceInput = document.getElementById("pub-price");
+    const descBox = document.getElementById("pub-description");
+
+    if(donationBox){
+      donationBox.checked = data.recommended_action === "donate";
+      donationBox.dispatchEvent(new Event("change"));
+    }
+    if(priceInput && data.suggested_price_sar !== undefined && data.recommended_action !== "donate"){
+      priceInput.value = data.suggested_price_sar;
+    }
+    if(descBox && data.drafted_description){
+      descBox.value = data.drafted_description;
+    }
   }
 
   currentAnalysis = data;
@@ -1040,7 +1115,8 @@ function setupPublish(){
       location: document.getElementById("pub-location").value,
       flag: allFlags.length ? allFlags.join("; ") : null,
       donation: isDonation,
-      postedBy: user.name
+      postedBy: user.name,
+      description: document.getElementById("pub-description").value || null
     };
 
     RATTIB_ITEMS.unshift(newItem);
@@ -1085,13 +1161,15 @@ function renderMoveOutResults(){
         <div style="height:100px;border-radius:var(--radius-sm);background:${bg};display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:11px;">${r.preview ? "" : "photo"}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">${tagsHTML}</div>
         ${r.isLive ? buildSafetyCheckHTML(a) : ""}
+        ${r.isLive ? buildRecommendationHTML(a) : ""}
         <select class="mo-cat" data-index="${i}" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;">
           ${["Electronics","Furniture","Clothing","Kids"].map(c => `<option value="${c}" ${a.category === c ? "selected" : ""}>${c}</option>`).join("")}
         </select>
+        <textarea class="mo-desc" data-index="${i}" placeholder="Listing description" rows="2" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;resize:vertical;">${a.drafted_description || ""}</textarea>
         <div style="display:flex;align-items:center;gap:10px;">
-          <input type="number" class="mo-price" data-index="${i}" placeholder="Price (SAR)" min="0" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-mono);font-size:13px;">
+          <input type="number" class="mo-price" data-index="${i}" placeholder="Price (SAR)" min="0" value="${(a.recommended_action && a.recommended_action !== 'donate' && a.suggested_price_sar !== undefined) ? a.suggested_price_sar : ''}" style="flex:1;padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-family:var(--font-mono);font-size:13px;">
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--basalt-soft);white-space:nowrap;">
-            <input type="checkbox" class="mo-donation" data-index="${i}"> Donate
+            <input type="checkbox" class="mo-donation" data-index="${i}" ${a.recommended_action === "donate" ? "checked" : ""}> Donate
           </label>
         </div>
         <div style="font-size:11px;color:var(--basalt-soft);">${r.isLive ? "Live AI analysis" : "Demo mode (backend unreachable)"}</div>
@@ -1170,6 +1248,7 @@ function setupMoveOut(){
       const category = document.querySelector(`.mo-cat[data-index="${i}"]`).value;
       const isDonation = document.querySelector(`.mo-donation[data-index="${i}"]`).checked;
       const price = isDonation ? 0 : Number(document.querySelector(`.mo-price[data-index="${i}"]`).value || 0);
+      const description = document.querySelector(`.mo-desc[data-index="${i}"]`).value || null;
       const allFlags = [...(r.analysis.defect_flags || []), ...(r.analysis.hazard_flags || [])];
 
       RATTIB_ITEMS.unshift({
@@ -1183,7 +1262,8 @@ function setupMoveOut(){
         location,
         flag: allFlags.length ? allFlags.join("; ") : null,
         donation: isDonation,
-        postedBy: user.name
+        postedBy: user.name,
+        description
       });
     });
 
