@@ -336,7 +336,7 @@ footer.site-footer .wrap{display:flex;justify-content:space-between;align-items:
             <p class="eyebrow" style="margin-bottom:0;">Chat with seller</p>
             <span onclick="reportChat()" style="font-size:12px;color:var(--basalt-soft);cursor:pointer;text-decoration:underline;">Report</span>
           </div>
-          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 12px;">Chat here to ask questions or arrange a pickup — sharing a phone number if you'd like is fine. Messages are screened by a fast rule-based filter, then a real AI classifier catches subtler scams and harassment the rules would miss.</p>
+          <p style="font-size:13px;color:var(--basalt-soft);margin:0 0 12px;">Chat here to ask questions or arrange a pickup — sharing a phone number if you'd like is fine. A fast rule-based filter catches obvious issues instantly; a real AI classifier reviews every message afterward for subtler scams or harassment and can flag one after it's sent.</p>
 
           <div style="background:var(--limestone-dark);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:12.5px;color:var(--basalt-soft);">
             Never send payment, banking details, or a verification code through chat — Rattib doesn't process payments here, and no legitimate buyer or seller will ask for these.
@@ -818,10 +818,11 @@ function saveChatThread(messages){
 
 let chatMessages = loadChatThread();
 
-function addBubbleDOM(text, mine){
+function addBubbleDOM(text, mine, index){
   const thread = document.getElementById("chat-thread");
   const bubble = document.createElement("div");
   bubble.textContent = text;
+  bubble.dataset.msgIndex = index;
   bubble.style.maxWidth = "80%";
   bubble.style.padding = "9px 14px";
   bubble.style.fontSize = "13.5px";
@@ -837,19 +838,49 @@ function addBubbleDOM(text, mine){
   }
   thread.appendChild(bubble);
   thread.scrollTop = thread.scrollHeight;
+  return bubble;
+}
+
+function markBubbleFlagged(bubble, reason){
+  if(!bubble) return;
+  bubble.style.textDecoration = "line-through";
+  bubble.style.opacity = "0.7";
+  const note = document.createElement("div");
+  note.textContent = "⚠ Flagged after sending: " + reason;
+  note.style.fontSize = "11px";
+  note.style.color = "var(--alert)";
+  note.style.alignSelf = bubble.style.alignSelf;
+  note.style.maxWidth = "80%";
+  bubble.insertAdjacentElement("afterend", note);
+}
+
+function flagMessageRetroactively(index, reason){
+  if(chatMessages[index]){
+    chatMessages[index].flagged = true;
+    chatMessages[index].flagReason = reason;
+    saveChatThread(chatMessages);
+  }
+  const thread = document.getElementById("chat-thread");
+  const bubble = thread.querySelector(`[data-msg-index="${index}"]`);
+  markBubbleFlagged(bubble, reason);
 }
 
 function renderChatThread(){
   const thread = document.getElementById("chat-thread");
   if(!thread) return;
   thread.innerHTML = "";
-  chatMessages.forEach(m => addBubbleDOM(m.text, m.mine));
+  chatMessages.forEach((m, i) => {
+    const bubble = addBubbleDOM(m.text, m.mine, i);
+    if(m.flagged) markBubbleFlagged(bubble, m.flagReason);
+  });
 }
 
 function addMessage(text, mine){
+  const index = chatMessages.length;
   chatMessages.push({ text, mine });
   saveChatThread(chatMessages);
-  addBubbleDOM(text, mine);
+  addBubbleDOM(text, mine, index);
+  return index;
 }
 
 function setupChat(){
@@ -866,7 +897,7 @@ function setupChat(){
     note.textContent = text;
   }
 
-  form.addEventListener("submit", async (e) => {
+  form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if(!text) return;
@@ -877,7 +908,8 @@ function setupChat(){
       return;
     }
 
-    // Pass 1: fast, rule-based, zero latency — catches obvious cases instantly.
+    // Pass 1: fast, rule-based, zero latency — catches obvious cases instantly,
+    // and still blocks synchronously since there's no reason to wait on this one.
     const ruleResult = screenMessage(text);
     if(ruleResult.action === "block"){
       flaggedCount++;
@@ -888,51 +920,64 @@ function setupChat(){
       return;
     }
 
-    // Pass 2: a real AI classification call, only for messages that already
-    // cleared Pass 1 — catches subtler cases (coded scams, indirect harassment)
-    // that a fixed keyword list can't. Degrades gracefully to Pass 1's result
-    // if the call fails, rather than blocking the user on a network hiccup.
-    showNote("Checking message…", "var(--basalt-soft)");
-    let aiResult = { action: "allow", reason: "" };
-    try {
-      const response = await fetch("/api/screen-message", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text })
-      });
-      if(response.ok){
-        aiResult = await response.json();
-      }
-    } catch(err){
-      // AI pass unreachable — fall back to the rule-based result silently
-    }
-
-    if(aiResult.action === "block"){
-      flaggedCount++;
-      let reason = "AI screening: " + aiResult.reason;
-      if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
-      showNote(reason, "var(--alert)");
-      input.value = "";
-      return;
-    }
-
-    addMessage(text, true);
+    // Send immediately rather than waiting on Pass 2 — a real AI classifier
+    // call takes real time, and making every single message wait on it is
+    // what was making chat feel slow. It now runs in the background and can
+    // retroactively flag this exact message if it finds something.
+    const messageIndex = addMessage(text, true);
     input.value = "";
 
-    const activeWarn = aiResult.action === "warn" ? ("AI screening: " + aiResult.reason)
-                      : (ruleResult.action === "warn" ? ruleResult.reason : null);
-
-    if(activeWarn){
+    if(ruleResult.action === "warn"){
       flaggedCount++;
-      let reason = activeWarn;
+      let reason = ruleResult.reason;
       if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
       showNote(reason, "var(--saffron-dark)");
     } else {
       note.style.display = "none";
     }
 
+    runBackgroundAiScreen(text, messageIndex);
+
     setTimeout(() => addMessage("Sounds good — let me know what time works best for you.", false), 1000);
   });
+
+  // Pass 2: a real AI classification call, run AFTER the message is already
+  // visible. Catches subtler cases (coded scams, indirect harassment) a fixed
+  // keyword list can't. If this call fails for any reason, that failure is
+  // shown — it never silently defaults to "allow" the way an unguarded
+  // try/catch would, since a silent failure here would look identical to a
+  // message that was actually screened and found clean.
+  async function runBackgroundAiScreen(text, messageIndex){
+    try{
+      const response = await fetch("/api/screen-message", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+
+      if(!response.ok){
+        showNote("AI safety check failed for your last message (server error) — it was sent without a full review.", "var(--basalt-soft)");
+        return;
+      }
+
+      const aiResult = await response.json();
+
+      if(aiResult.action === "block"){
+        flaggedCount++;
+        flagMessageRetroactively(messageIndex, aiResult.reason);
+        let reason = "AI screening flagged your last message after sending: " + aiResult.reason;
+        if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
+        showNote(reason, "var(--alert)");
+      } else if(aiResult.action === "warn"){
+        flaggedCount++;
+        let reason = "AI screening: " + aiResult.reason;
+        if(flaggedCount >= 3) reason += " This conversation has had several flagged messages — consider using the Report button.";
+        showNote(reason, "var(--saffron-dark)");
+      }
+    } catch(err){
+      showNote("AI safety check unreachable for your last message — it was sent without a full review.", "var(--basalt-soft)");
+    }
+  }
 }
 
 function reportChat(){
@@ -950,7 +995,6 @@ setupAccount();
 setupMoveOut();
 setupPhotoUpload();
 setupPublish();
-setupRecommendationToggle();
 
 /* ---------------- AI photo analysis: real call with graceful fallback ---------------- */
 const DEMO_FALLBACK_ANALYSIS = {
@@ -1000,61 +1044,75 @@ function buildSafetyCheckHTML(data){
   return "";
 }
 
-function buildRecommendationHTML(data, scope){
-  if(!data.recommended_action){
-    // Stage 3 (the recommendation call) failed on the backend, but Stage 1+2
-    // (attributes + safety check) succeeded, so we still got a 200 response -
-    // just without recommended_action. That response carries
-    // recommendation_stage_failed/recommendation_error_message specifically
-    // so this state can be shown instead of silently rendering nothing.
-    if(data.recommendation_stage_failed){
-      return `
-        <div style="margin-top:4px;padding:12px 14px;background:var(--limestone-dark);border-radius:var(--radius-sm);">
-          <div style="font-size:12.5px;color:var(--basalt-soft);">${data.recommendation_error_message || "We couldn't generate a recommendation for this photo. You can still fill in the details manually below."}</div>
-        </div>`;
-    }
-    return "";
-  }
-  scope = scope === undefined ? "single" : scope;
+function buildRecommendationHTML(data){
+  if(!data.recommended_action) return "";
   const styles = {
     sell:    { bg: "var(--petrol-light)",  fg: "var(--petrol-dark)",  label: "Sell" },
     donate:  { bg: "var(--saffron-light)", fg: "var(--saffron-dark)", label: "Donate" },
     recycle: { bg: "var(--alert-light)",   fg: "var(--alert)",        label: "Recycle" }
   };
-
-  // The user may have picked the alternative instead of the primary
-  // recommendation — data.selectedAction tracks that choice (defaults to
-  // whatever Stage 3 recommended) so re-rendering after a toggle reflects it.
-  const selected = data.selectedAction || data.recommended_action;
-  const isAltSelected = selected !== data.recommended_action;
-  const selectedReason = isAltSelected ? data.alternative_reason : data.recommendation_reason;
-
-  // Whichever of {recommended_action, alternative_action} is NOT currently
-  // selected is offered as the switchable option, when one exists.
-  let otherAction = null, otherReason = "";
-  if(data.alternative_action){
-    otherAction = isAltSelected ? data.recommended_action : data.alternative_action;
-    otherReason = isAltSelected ? data.recommendation_reason : data.alternative_reason;
-  }
-
-  const s = styles[selected] || styles.sell;
+  const s = styles[data.recommended_action] || styles.sell;
   let html = `
     <div style="margin-top:4px;padding:12px 14px;background:${s.bg};border-radius:var(--radius-sm);">
       <div style="font-size:12.5px;font-weight:700;color:${s.fg};margin-bottom:4px;">Stage 3 recommendation: ${s.label}</div>
-      <div style="font-size:12.5px;color:var(--basalt-soft);">${selectedReason || ""}</div>`;
-  if(selected === "sell" && data.suggested_price_sar !== undefined){
+      <div style="font-size:12.5px;color:var(--basalt-soft);">${data.recommendation_reason || ""}</div>`;
+  if(data.recommended_action === "sell" && data.suggested_price_sar !== undefined){
     html += `<div style="font-size:12.5px;color:var(--basalt-soft);margin-top:6px;font-family:var(--font-mono);">Suggested price: ${data.suggested_price_sar} SAR — ${data.price_reasoning || ""}</div>`;
-  }
-  if(otherAction){
-    const os = styles[otherAction] || styles.donate;
-    html += `
-      <div style="margin-top:9px;padding-top:9px;border-top:1px solid rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-        <div style="font-size:11.5px;color:var(--basalt-soft);">Alternative: <strong style="color:${os.fg};">${os.label}</strong> — ${otherReason || ""}</div>
-        <button type="button" class="rec-alt-btn" data-scope="${scope}" data-action="${otherAction}" style="font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid ${os.fg};background:transparent;color:${os.fg};cursor:pointer;white-space:nowrap;">Use ${os.label} instead</button>
-      </div>`;
   }
   html += `</div>`;
   return html;
+}
+
+function autofillPublishForm(recData){
+  const donationBox = document.getElementById("pub-donation");
+  const priceInput = document.getElementById("pub-price");
+  const descBox = document.getElementById("pub-description");
+
+  if(donationBox){
+    donationBox.checked = recData.recommended_action === "donate";
+    donationBox.dispatchEvent(new Event("change"));
+  }
+  if(priceInput && recData.suggested_price_sar !== undefined && recData.recommended_action !== "donate"){
+    priceInput.value = recData.suggested_price_sar;
+  }
+  if(descBox && recData.drafted_description){
+    descBox.value = recData.drafted_description;
+  }
+}
+
+function applyRecommendation(recData){
+  const recBox = document.getElementById("ai-recommendation");
+  if(recBox) recBox.innerHTML = buildRecommendationHTML(recData);
+  autofillPublishForm(recData);
+  if(currentAnalysis){
+    currentAnalysis = { ...currentAnalysis, ...recData };
+  }
+}
+
+async function fetchRecommendation(verified){
+  const recBox = document.getElementById("ai-recommendation");
+  try{
+    const response = await fetch("/api/recommend", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        item_name: verified.item_name,
+        material: verified.material,
+        category: verified.category,
+        condition: verified.condition,
+        defect_flags: verified.defect_flags,
+        hazard_flags: verified.hazard_flags
+      })
+    });
+    if(!response.ok){
+      if(recBox) recBox.innerHTML = `<div style="margin-top:4px;padding:10px 12px;font-size:12.5px;color:var(--alert);">Recommendation step unavailable — basic details are still filled in above.</div>`;
+      return;
+    }
+    const recData = await response.json();
+    applyRecommendation(recData);
+  } catch(err){
+    if(recBox) recBox.innerHTML = `<div style="margin-top:4px;padding:10px 12px;font-size:12.5px;color:var(--alert);">Recommendation step unavailable — basic details are still filled in above.</div>`;
+  }
 }
 
 function renderAiTags(data, isLive, errorDetail){
@@ -1075,7 +1133,15 @@ function renderAiTags(data, isLive, errorDetail){
     (data.hazard_flags || []).forEach(f => html += `<span class="rtag warn">${f}</span>`);
     tagsBox.innerHTML = html;
     if(safetyBox) safetyBox.innerHTML = buildSafetyCheckHTML(data);
-    if(recBox) recBox.innerHTML = buildRecommendationHTML(data);
+    if(recBox){
+      if(data.recommended_action){
+        recBox.innerHTML = buildRecommendationHTML(data);
+      } else if(isLive){
+        recBox.innerHTML = `<div style="margin-top:4px;padding:10px 12px;font-size:12.5px;color:var(--basalt-soft);font-style:italic;">Thinking about next steps…</div>`;
+      } else {
+        recBox.innerHTML = "";
+      }
+    }
   }
 
   if(isLive){
@@ -1094,33 +1160,12 @@ function renderAiTags(data, isLive, errorDetail){
     categorySelect.value = data.category;
   }
 
-  if(!errorDetail){
-    const descBox = document.getElementById("pub-description");
-    if(descBox && data.drafted_description){
-      descBox.value = data.drafted_description;
-    }
-    applySelectedActionToPublishForm(data);
+  if(!errorDetail && data.recommended_action){
+    autofillPublishForm(data);
   }
 
   currentAnalysis = data;
   document.getElementById("publish-panel").style.display = "flex";
-}
-
-// Pushes whichever action is currently selected (Stage 3's primary
-// recommendation, or the alternative if the user toggled to it) onto the
-// single-item publish form's donation checkbox and price field.
-function applySelectedActionToPublishForm(data){
-  const donationBox = document.getElementById("pub-donation");
-  const priceInput = document.getElementById("pub-price");
-  const selected = data.selectedAction || data.recommended_action;
-
-  if(donationBox){
-    donationBox.checked = selected === "donate";
-    donationBox.dispatchEvent(new Event("change"));
-  }
-  if(priceInput){
-    priceInput.value = selected === "sell" && data.suggested_price_sar !== undefined ? data.suggested_price_sar : 0;
-  }
 }
 
 function setupPublish(){
@@ -1208,7 +1253,7 @@ function renderMoveOutResults(){
         <div style="height:100px;border-radius:var(--radius-sm);background:${bg};display:flex;align-items:center;justify-content:center;color:var(--basalt-soft);font-size:11px;">${r.preview ? "" : "photo"}</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">${tagsHTML}</div>
         ${r.isLive ? buildSafetyCheckHTML(a) : ""}
-        <div class="mo-rec" data-index="${i}">${r.isLive ? buildRecommendationHTML(a, i) : ""}</div>
+        ${r.isLive ? buildRecommendationHTML(a) : ""}
         <select class="mo-cat" data-index="${i}" style="padding:8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);font-size:13px;">
           ${["Electronics","Furniture","Clothing","Kids"].map(c => `<option value="${c}" ${a.category === c ? "selected" : ""}>${c}</option>`).join("")}
         </select>
@@ -1223,46 +1268,6 @@ function renderMoveOutResults(){
       </div>
     `;
   }).join("");
-}
-
-// Pushes whichever action is currently selected for one move-out row onto
-// that row's own donation checkbox and price field. Only touches this row —
-// other rows' typed-in descriptions/categories are left untouched.
-function applySelectedActionToMoveOutRow(index, data){
-  const donationBox = document.querySelector(`.mo-donation[data-index="${index}"]`);
-  const priceInput = document.querySelector(`.mo-price[data-index="${index}"]`);
-  const selected = data.selectedAction || data.recommended_action;
-
-  if(donationBox) donationBox.checked = selected === "donate";
-  if(priceInput) priceInput.value = selected === "sell" && data.suggested_price_sar !== undefined ? data.suggested_price_sar : "";
-}
-
-// Single delegated listener handles the "Use X instead" toggle button for
-// both the single-item flow (scope "single") and each move-out card
-// (scope = row index), re-rendering only the affected recommendation box.
-function setupRecommendationToggle(){
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest(".rec-alt-btn");
-    if(!btn) return;
-    const scope = btn.dataset.scope;
-    const action = btn.dataset.action;
-
-    if(scope === "single"){
-      if(!currentAnalysis) return;
-      currentAnalysis.selectedAction = action;
-      const recBox = document.getElementById("ai-recommendation");
-      if(recBox) recBox.innerHTML = buildRecommendationHTML(currentAnalysis, "single");
-      applySelectedActionToPublishForm(currentAnalysis);
-    } else {
-      const idx = Number(scope);
-      const row = moResults[idx];
-      if(!row) return;
-      row.analysis.selectedAction = action;
-      const box = document.querySelector(`.mo-rec[data-index="${idx}"]`);
-      if(box) box.innerHTML = buildRecommendationHTML(row.analysis, idx);
-      applySelectedActionToMoveOutRow(idx, row.analysis);
-    }
-  });
 }
 
 function setupMoveOut(){
@@ -1305,6 +1310,27 @@ function setupMoveOut(){
         if(!response.ok) throw new Error("backend error " + response.status);
         result = await response.json();
         isLive = true;
+
+        // Stage 3, chained per item — its own endpoint call now, same as the
+        // single-item flow, so a slow recommendation for one photo doesn't
+        // block Stage 1+2 from having already returned.
+        progress.textContent = `Reasoning about photo ${i + 1} of ${moFiles.length}…`;
+        try{
+          const recResponse = await fetch("/api/recommend", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              item_name: result.item_name, material: result.material, category: result.category,
+              condition: result.condition, defect_flags: result.defect_flags, hazard_flags: result.hazard_flags
+            })
+          });
+          if(recResponse.ok){
+            const recData = await recResponse.json();
+            result = { ...result, ...recData };
+          }
+        } catch(recErr){
+          // Stage 3 failed for this item — keep the Stage 1+2 result rather than losing everything
+        }
       } catch(err){
         result = { ...DEMO_FALLBACK_ANALYSIS };
       }
@@ -1394,6 +1420,8 @@ function setupPhotoUpload(){
     analyzeBtn.textContent = "Analyzing…";
     analyzeBtn.style.pointerEvents = "none";
 
+    let verified = null;
+
     try{
       const base64 = await fileToBase64(selectedFile);
       const response = await fetch("/api/analyze-photo", {
@@ -1408,8 +1436,8 @@ function setupPhotoUpload(){
         console.error("Backend error:", response.status, bodyText);
         renderAiTags(DEMO_FALLBACK_ANALYSIS, false, `status ${response.status} — ${bodyText.slice(0,400)}`);
       } else {
-        const data = await response.json();
-        renderAiTags(data, true);
+        verified = await response.json();
+        renderAiTags(verified, true);
       }
     } catch(err){
       console.error("Network/parse error:", err);
@@ -1418,6 +1446,13 @@ function setupPhotoUpload(){
 
     analyzeBtn.textContent = "Analyze photo";
     analyzeBtn.style.pointerEvents = "auto";
+
+    // Stage 1+2 is already on screen — Stage 3 runs now, in the background,
+    // and fills in the recommendation/price/description a moment later
+    // instead of making the user wait for both before seeing anything.
+    if(verified){
+      fetchRecommendation(verified);
+    }
   });
 }
 </script>
